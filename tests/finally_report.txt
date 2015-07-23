@@ -1,0 +1,36 @@
+Scenario "print something" begins
+        Message: "something"
+Scenario passed
+
+Scenario "check, that failed Given aborts Scenario without calling Finally" begins
+    Raised step error: Action step "Given failed step" failed
+Scenario failed
+    Failed "Given failed step"
+
+Scenario "check, that failed When finishes Scenario and calls Finally" begins
+    Raised step error: Action step "When failed step" failed
+        Message: "Finally step should be called"
+Scenario failed
+    Failed "When failed step"
+
+Scenario "check, that failed Then does not stop Scenario execution" begins
+        Message: "Next step should be called"
+        Message: "Finally step should be called too"
+Scenario failed
+    Failed "Then failed step"
+
+Scenario "check, that syntax error after Given aborts Scenario without calling Finally" begins
+    Raised syntax error: Unexpected position of quote in " And syntax error
+Scenario failed
+
+Scenario "check, that syntax error after When finishes Scenario and calls Finally" begins
+    Raised syntax error: Unexpected position of quote in " And syntax error
+        Message: "Finally step should be called"
+Scenario failed
+    Failed "Then failed step"
+
+Scenario "check, that syntax error after Then does not finish anything" begins
+    Raised syntax error: Unexpected position of quote in "And syntax error
+        Message: "Finally should be called"
+Scenario failed
+

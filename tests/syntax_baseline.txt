@@ -1,0 +1,13 @@
+Scenario "doubtful keyword" begins
+    Raised syntax error: Unexpected first keyword 'And'
+    Raised syntax error: No suitable step for this argument "12345"
+Scenario failed
+
+Scenario "orphanic argument" begins
+    Raised syntax error: No suitable step for this argument "abcdabcd"
+Scenario failed
+
+Scenario "bug "params.length is null or not object"" begins
+    Raised syntax error: Unexpected line "<message>"
+Scenario failed
+

@@ -38,11 +38,26 @@ var Flow = (function(){
 	//
 	var scenarioName;
 
+	// returns obj[key1]...[keyN] or undefined
+	var getPropertyByKeys = function(obj, keys){
+		// object to check for the next key in list
+		var property = obj;
+		// cycle stops, when property becomes undefined
+		keys.every(function(key){
+			property = property[key];
+			return property !== undefined;
+		});
+		return property;
+	}
+
+	// Handles all the errors, which happened while Scenario was read || any steps executed 
+	// Common: nothing marked invalid
 	// TODO check procedure errors handling and sth like that(without Given, but need abort)
-	var setError = function(errorName, msg){
+	var runtimeError = function(errorName, msg, dataObject){
 		blockError = true;
 		passed = false;
 
+		msg = substituteValues(msg, dataObject).replace(/\n/,'\n'+INDENT);
 		alert(INDENT.concat("Raised ",errorName,': ',msg));
 		var callStack = stringifyCallStack();
 		if(callStack.length) alert(callStack);
@@ -82,14 +97,35 @@ var Flow = (function(){
 		});
 		return str; 
 	}
+	// @param msg is string, that can contain groups in single quotes like 'property1. ... .propertyN'
+	// If dataObject[property1]...[propertyN] is defined, function substitutes this value 
+	// into string instead of 'group'. String values are wrapped in double quotes.
+	var substituteValues = function(msg, dataObject){
+		// matching quoted sequence of properties
+		var groupRegExp = /'[A-Za-z0-9_\.]+'/;
+		// simple message string can contain words in single quotes
+		// that will cause errors with 'property'
+		if( !dataObject) return msg;
+
+		var searched = msg;
+		var groupPos = searched.search(groupRegExp);
+		while(groupPos != -1){
+			var secondQuote = searched.indexOf("'", groupPos+1);
+			// can be obtained better?
+			var group = searched.substring(groupPos+1, secondQuote) // group without quotes 
+			var property = getPropertyByKeys(dataObject, group.split('.'));
+			if(property !== undefined){
+				// also double-quote string values
+				msg = msg.replace(new RegExp(sq(group)), 
+					(typeof property == "string") ? quote(property) : property);
+			}
+			searched = msg.slice(groupPos + (msg.length - searched.length));
+			groupPos = searched.search(groupRegExp);
+		}
+		return msg;
+	}
 
 	return {
-		callError: function(msg, procedure){
-			msg = msg.replace(/'name'/,quote(procedure.name));
-			msg = msg.replace(/'params.length'/,(procedure.params) ? procedure.params.length : 0);
-			msg = msg.replace(/\n/,'\n'+INDENT);
-			setError("procedure error",msg);
-		},
 		gotError: function(){
 			return blockError;
 		},
@@ -99,13 +135,14 @@ var Flow = (function(){
 			// Example for variant "!currentKeyword" is Outline with syntax error
 			return blockError && (!currentKeyword || currentKeyword == 'Given');
 		},
+		// syntax errors, that happened during procedure loading
 		loadError: function(msg, procedure){
 			alert(INDENT.concat('Load error: ',msg));
 			alert(INDENT.concat('Happened in procedure ',quote(procedure.name)));
 			procedure.invalid = true;
 		},
 		nextBlock: function(){
-			// without that reset most of Core functions won't be executed, because they check Flow.valid()
+			// without that reset most of Core methods won't be executed, because they check Flow.valid()
 			blockError = false;
 			currentKeyword = undefined;
 		},
@@ -126,12 +163,7 @@ var Flow = (function(){
 				if(tags) alert("It has tags "+tags.join());
 			}
 		},
-		sentenceError: function(msg, sentence){
-			msg = msg.replace(/'sentence'/,quote(sentence));
-			// TEST currentKeyword == kind
-			msg = msg.replace(/'keyword'/, sq(currentKeyword));
-			setError("sentence error",msg);
-		},
+		runtimeError: runtimeError,
 		sentenceFailure: function(sent, arg){
 			passed = false;
 			failedSents.push({
@@ -141,21 +173,13 @@ var Flow = (function(){
 				stack: stringifyCallStack('    ')
 			});
 			// fails of action steps are understood like errors and terminate scenario execution
-			if(currentKeyword != 'Then'){
-				setError('step error','Action step '.concat(
-				   quote(currentKeyword,' ',sent), ' failed'));
-			}
+			if(currentKeyword != 'Then') runtimeError(
+				'step error',
+				'Action step '.concat(quote(currentKeyword,' ',sent), ' failed')
+			);
 		},
 		setCurrentKeyword: function(word){
 			currentKeyword = word;
-		},
-		stepError: function(msg, step){
-			msg = msg.replace(/'step'/,quote(step.join(STEP_JOIN_SYMBOL)));
-			setError("step error",msg);
-		},
-		syntaxError: function(msg){
-			//TODO special check for Finally
-			setError('syntax error',msg);
 		},
 		valid: function(){
 			return !blockError;
@@ -192,6 +216,11 @@ var Core = (function(){
 	// used to correspond names of step variables and Scenario Examples \ Procedure arguments
 	var variables = {};
 
+	//shortcut for FLow.runtimeError
+	var callError = function(msg, procedure){
+		Flow.runtimeError('procedure error', msg, procedure);
+	}
+
 	/*If step contains some variables (even parts of array),
 	* function creates resulting step to be matched to regular expressions
 	* by substituting values from 'variables' map.
@@ -204,7 +233,10 @@ var Core = (function(){
 				if(value){
 					sentence[i] = value;
 				}else{
-					Flow.stepError("In the step 'step' variable '"+step[i]+"' isn't defined", step);
+					Flow.runtimeError(
+						'step error', 
+						"In the step ".concat(quote(step.join("'"))," variable ",quote(step[i])," isn't defined")
+					);
 					break;
 				}
 			}
@@ -245,7 +277,10 @@ var Core = (function(){
 				return true; //interrupt cycle
 			}
 		})){
-			Flow.sentenceError("Sentence 'sentence' doesn't fit any step definition from group 'keyword'", sent);
+			Flow.runtimeError(
+				'sentence error',
+				"Sentence 'sentence' doesn't fit any step definition from group 'keyword'",
+			{keyword: keyword, sentence: sent});
 		}
 		if(funcRes === false) Flow.sentenceFailure(sent, arg);
 		return funcRes;
@@ -276,9 +311,10 @@ var Core = (function(){
 			}else{
 				//TEMPORARY to avoid printing failed procedure in callStack with old variables
 				var called = callStack.pop();
-				Flow.callError("Data Table row |"+row.join('|')+'|\n' +
-				"Procedure 'name' has 'params.length' parameters, but got "+row.length+" arguments",
-				procedure );
+				callError(
+					"Data Table row |"+row.join('|')+'|\n' +
+					"Procedure 'name' has 'params.length' parameters, but got "+row.length+" arguments",
+				procedure);
 				callStack.push(called);
 			}
 		});
@@ -295,13 +331,12 @@ var Core = (function(){
 			return Flow.valid();
 		});
 	}
-
 	function verifyArgument(procedure, arg){
 		var argType = 0; // error value
 		if(!arg){
 			debug('no arg');
 			if(procedure.params) 
-				Flow.callError("Procedure 'name' has got no arguments, but requires 'params.length'", procedure);
+				callError("Procedure 'name' has got no arguments, but requires 'params.length'", procedure);
 			else argType = ABSENT;
 		}else if(typeof arg == 'string'){
 			debug('arg string');
@@ -309,12 +344,12 @@ var Core = (function(){
 				//
 				argType = STRING;
 			}else{
-				Flow.callError("Procedure 'name' has 'params.length' parameters and got one string argument", procedure);
+				callError("Procedure 'name' has 'params.length' parameters and got one string argument", procedure);
 			}
 		}else if(typeof arg[0] == 'string'){
 			debug('arg is DocString');
 			if(procedure.params)
-				Flow.callError("Procedure 'name' has 'params.length' parameters and got one Doc String argument", procedure);
+				callError("Procedure 'name' has 'params.length' parameters and got one Doc String argument", procedure);
 			else argType = DOC_STRING;
 		}else{
 			debug('arg is table');
@@ -351,7 +386,7 @@ var Core = (function(){
 					debug('pop '+callStack.last().name);
 					callStack.pop();
 					variables = callStack.last().vars;
-				}else Flow.callError("Attempt to access invalid procedure 'name'",procedure);
+				}else callError("Attempt to access invalid procedure 'name'",procedure);
 			}else{
 				sentence = [];
 				if(collectSentence(step, sentence)){
@@ -418,7 +453,7 @@ var Engine = (function(){
 		},
 		catchSyntaxError: function(msg){
 			if(loadedProcedure && loadedProcedure != procedures[0]) Flow.loadError(msg, loadedProcedure);
-			else Flow.syntaxError(msg);
+			else Flow.runtimeError('syntax error', msg);
 		},
 		// to get last report
 		finish: Flow.nextScenario,
@@ -475,8 +510,8 @@ var Engine = (function(){
 					// Second forces Core to check for procedures[0], which exist, and call it.
 					// TODO add defense against numeric steps 
 					Core.execute('Run procedure',[0], examples);
-				}else Flow.callError("Scenario Outline 'name' has syntax error and can't be executed"
-				      ,loadedProcedure);
+				}else callError("Scenario Outline 'name' has syntax error and can't be executed",
+				      loadedProcedure);
 			}else alert('Engine: Not found Scenario Outline to use this Examples for.');
 		}
 	};

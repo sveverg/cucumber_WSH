@@ -1,0 +1,4 @@
+Scenario "undefined step" begins
+    Raised sentence error: Sentence "undefined step" doesn't fit any step definition from group "When"
+Scenario failed
+

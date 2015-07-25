@@ -1,7 +1,8 @@
 Scenario "irregular row length" begins
     Raised procedure error: Data Table row |2|1|6|9|
     Procedure "irregular row length" has 3 parameters, but got 4 arguments
-    Raised syntax error: It is incomprehensible, what to do with step 'When reset'
+    Raised syntax error: It is incomprehensible, what to do with that step
+    In step "When reset"
 Scenario failed
     Failed "Then sum is 10"
     In Procedure: irregular row length

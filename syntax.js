@@ -93,10 +93,16 @@ var Buffer = (function(){
 			// engine action can be set undefined, for example, in #4.1
 			if(engineAction){
 				engineAction.call(Engine, previousKeyword, stepBuffer, arg);
-			}else Engine.catchSyntaxError("It is incomprehensible, what to do with step '"+
-			             previousKeyword+' '+stepBuffer+"'");
+			}else 
+				stepError("It is incomprehensible, what to do with that step",previousKeyword,stepBuffer);
 			stepBuffer = undefined;
 		}
+	}
+
+	var stepError = function(msg, keyword, step){
+		if(keyword) msg = msg.concat('\nIn step "',keyword);
+		if(step)    msg = msg.concat(' ',step);
+		Engine.catchSyntaxError(msg+'"');
 	}
 
 	return{
@@ -127,7 +133,7 @@ var Buffer = (function(){
 					run_n_purge();
 					stepBuffer = step;
 				}else{
-					Engine.catchSyntaxError("Unexpected first keyword '"+keyword+"'");
+					stepError("Unexpected first keyword "+quote(keyword), gLine.firstPart, step);
 				}
 			})
 			.other(function(){
@@ -136,7 +142,10 @@ var Buffer = (function(){
 					previousKeyword = keyword;
 					stepBuffer = step;
 				}else{
-					Engine.catchSyntaxError("Unexpected keyword+'"+keyword+"' after keyword '"+previousKeyword+"'");
+					stepError("Unexpected keyword ".concat(
+						quote(keyword),' after keyword ',quote(previousKeyword) ),
+						gLine.firstPart, step
+					);
 				}
 			});
 		},

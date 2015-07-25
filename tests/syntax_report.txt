@@ -1,5 +1,6 @@
 Scenario "doubtful keyword" begins
-    Raised syntax error: Unexpected first keyword 'And'
+    Raised syntax error: Unexpected first keyword "And"
+    In step "And print"
     Raised syntax error: No suitable step for this argument "12345"
 Scenario failed
 

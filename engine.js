@@ -11,10 +11,12 @@ var callStack = [{
 	vars: []
 }];
 
-// Stores sequence of Finally block steps in currentlly loaded Scenario 
-// For Scenario Outline steps are stored in procedures[0].final
-// becomes UNDEFINED at the beginning of next Scenario(not Outline)
+// Stores sequence of Finally block steps in currentlly loaded Scenario || Outline
+// becomes UNDEFINED at the beginning of next scenario
 var finallyBuffer;
+
+// is Finally block of Scenario || Outline right now executed
+var finallyExecuted = false;
 
 /* Controls execution of blocks Finally, Background and Ending.
 *  Accepts notifications about step failures and errors.
@@ -52,7 +54,7 @@ var Flow = (function(){
 
 	// Handles all the errors, which happened while Scenario was read || any steps executed 
 	// Common: nothing marked invalid
-	// TODO check procedure errors handling and sth like that(without Given, but need abort)
+	//TODO check procedure errors handling and sth like that(without Given, but need abort)
 	var runtimeError = function(errorName, msg, dataObject){
 		blockError = true;
 		passed = false;
@@ -137,12 +139,16 @@ var Flow = (function(){
 		},
 		// syntax errors, that happened during procedure loading
 		loadError: function(msg, procedure){
-			alert(INDENT.concat('Load error: ',msg));
-			alert(INDENT.concat('Happened in procedure ',quote(procedure.name)));
-			procedure.invalid = true;
+			alert('Load error: '+msg.replace(/\n/,'\n'+INDENT));
+			// procedure can be undefined. ex: attempt to load procedure with duplicated name
+			if(procedure){
+				procedure.invalid = true;
+				alert('Happened in procedure '+quote(procedure.name));
+			}
+			alert();
 		},
 		nextBlock: function(){
-			// without that reset most of Core methods won't be executed, because they check Flow.valid()
+			// without that reset step definitions won't be executed, because Core methods check Flow.valid()
 			blockError = false;
 			currentKeyword = undefined;
 		},
@@ -155,13 +161,13 @@ var Flow = (function(){
 			}
 			scenarioName = name;
 			failedSents = [];
-			currentKeyword = undefined;
 			blockError = false;
 			passed = true;
 			if(scenarioName){
 				alert("Scenario "+quote(scenarioName)+" begins");
 				if(tags) alert("It has tags "+tags.join());
 			}
+			currentKeyword = undefined;
 		},
 		runtimeError: runtimeError,
 		sentenceFailure: function(sent, arg){
@@ -173,7 +179,7 @@ var Flow = (function(){
 				stack: stringifyCallStack('    ')
 			});
 			// fails of action steps are understood like errors and terminate scenario execution
-			if(currentKeyword != 'Then') runtimeError(
+			if(currentKeyword != 'Then' ) runtimeError(
 				'step error',
 				'Action step '.concat(quote(currentKeyword,' ',sent), ' failed')
 			);
@@ -410,6 +416,14 @@ var Core = (function(){
 
 var Engine = (function(){
 
+	//TODO add var OUTLINE = 0
+
+	// If procedure can't be loaded to procedures[name], ex. name is duplicated
+	// then it's loaded to procedures[CARANTINE]
+	// to avoid long list of errors "Engine: sentence 'step' is loaded to an undefined procedure"
+	// It exists for some time, but can't be called
+	var CARANTINE = 1;
+
 	var ENGINE_DEBUG = true;
 
 	// points at procedure object, which is currently loaded
@@ -426,7 +440,7 @@ var Engine = (function(){
 			if(loadedProcedure){
 				if(loadedProcedure == procedures[0]){
 					finallyBuffer = [];
-					Flow.nextBlock();
+					Flow.nextBlock(); // to change currentKeyword in Flow
 				}
 				else Flow.loadError("Unexpected block Finally", loadedProcedure);
 			}else{
@@ -434,6 +448,7 @@ var Engine = (function(){
 				if( !Flow.isAborted()){
 					finallyBuffer = [];
 					Flow.nextBlock();
+					finallyExecuted = true;
 					debug('Finally is executed');
 				}
 				else debug('Finally is omitted');
@@ -464,13 +479,16 @@ var Engine = (function(){
 			loadedProcedure = procedures[0];
 		},
 		newProcedure: function(name, params){
-			alert("\nEngine: Loading Procedure "+name);
+			Flow.nextScenario();// to print report and insert new line
+
+			debug("Engine: Loading Procedure "+name);
 			if( !procedures[name]){
 				procedures[name] = {name: name, params: params, steps: []};
 				loadedProcedure = procedures[name];
 			}else{
-				alert("Engine: there is another procedure with name "+name);
-				loadedProcedure = undefined;
+				Flow.loadError("there is another procedure with name "+name);
+				procedures[CARANTINE] = {name: name, params: undefined, steps: []};
+				loadedProcedure = procedures[CARANTINE];
 			}
 		},
 		newScenario: function(name, tags){
@@ -484,6 +502,7 @@ var Engine = (function(){
 			if(finallyBuffer){
 				 // finally block of scenario
 				if( !Flow.isAborted()){
+					debug('We are in Finally block of Scenario');
 					Core.execute(word, step, arg);
 					finallyBuffer.push({
 						word: word,

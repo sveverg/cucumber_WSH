@@ -35,7 +35,7 @@ Scenario "check, that syntax error after Then does not finish anything" begins
 Scenario failed
 
 Scenario "Finally block is aborted by next Scenario" begins
-        Message: "Step should be omitted"
+        Message: "Step should be called"
 Scenario failed
     Failed "Then failed step"
 

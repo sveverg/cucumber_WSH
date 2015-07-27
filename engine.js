@@ -15,9 +15,6 @@ var callStack = [{
 // becomes UNDEFINED at the beginning of next scenario
 var finallyBuffer;
 
-// is Finally block of Scenario || Outline right now executed
-var finallyExecuted = false;
-
 /* Controls execution of blocks Finally, Background and Ending.
 *  Accepts notifications about step failures and errors.
 *  Stores and prints information about executed scenario.*/
@@ -36,9 +33,21 @@ var Flow = (function(){
 	// { name, step, arg, stack: stringified call stack}
 	var failedSents = [];
 
+	var finallyExecuted = false;
+
 	var passed = true;
+
+	// Special mark, which prevents execution of any Scenario in file
+	// Right now triggered in case of syntax or runtime error in Finally block
+	// This mark prevents reset of blockError, so no more step definitions will be ever executed
+	var skipFeature = false;
 	//
 	var scenarioName;
+
+
+	var debug = function(msg){
+		if(App.debug) alert('Flow: '+msg);
+	}
 
 	// returns obj[key1]...[keyN] or undefined
 	var getPropertyByKeys = function(obj, keys){
@@ -58,7 +67,11 @@ var Flow = (function(){
 	var runtimeError = function(errorName, msg, dataObject){
 		blockError = true;
 		passed = false;
-
+		if(finallyExecuted){
+			skipFeature = true;
+			errorName = 'fatal '+errorName;
+			msg += ' in block Finally';
+		}
 		msg = substituteValues(msg, dataObject).replace(/\n/,'\n'+INDENT);
 		alert(INDENT.concat("Raised ",errorName,': ',msg));
 		var callStack = stringifyCallStack();
@@ -128,12 +141,12 @@ var Flow = (function(){
 	}
 
 	return {
-		gotError: function(){
-			return blockError;
-		},
+		// block types
+		FINALLY: 1, 
+		OUTLINE_ITERATION: 2,
 		// will finally block be executed
 		isAborted: function(){
-			if(App.debug) alert('Current keyword is '+currentKeyword);
+			//if(App.debug) alert('Current keyword is '+currentKeyword);
 			// Example for variant "!currentKeyword" is Outline with syntax error
 			return blockError && (!currentKeyword || currentKeyword == 'Given');
 		},
@@ -147,10 +160,22 @@ var Flow = (function(){
 			}
 			alert();
 		},
-		nextBlock: function(){
-			// without that reset step definitions won't be executed, because Core methods check Flow.valid()
-			blockError = false;
+		// @param {blockType} one of numeric constants, provided by Flow
+		nextBlock: function(blockType){
+			// without that reset step definitions won't be executed,
+			// because Core methods check Flow.valid()
+			if( !skipFeature){
+				blockError = false;
+				debug('blockError reset');
+			}
 			currentKeyword = undefined;
+			switch(blockType){
+				case this.FINALLY: finallyExecuted = true;
+					break;
+				case this.OUTLINE_ITERATION: finallyExecuted = false;
+					break;
+				default: alert('Wrong blockType for the Flow.nextBlock()');
+			}
 		},
 		nextScenario: function(name, tags){
 			if(scenarioName){
@@ -159,18 +184,27 @@ var Flow = (function(){
 				if(str.length) alert(str+'\n');
 				else alert();
 			}
-			scenarioName = name;
-			failedSents = [];
-			blockError = false;
-			passed = true;
-			if(scenarioName){
-				alert("Scenario "+quote(scenarioName)+" begins");
-				if(tags) alert("It has tags "+tags.join());
+			if(!skipFeature){
+				scenarioName = name;
+				failedSents = [];
+				blockError = false;
+				passed = true;
+				if(scenarioName){
+					alert("Scenario "+quote(scenarioName)+" begins");
+					if(tags) alert("It has tags "+tags.join());
+				}
+			}else{
+				// to avoid repeating same report
+				scenarioName = undefined;
+				// and blockError stays true, nothing is executed
 			}
+			// syntax check continues
 			currentKeyword = undefined;
+			finallyExecuted = false;
 		},
 		runtimeError: runtimeError,
 		sentenceFailure: function(sent, arg){
+			debug('sentenceFailure called');
 			passed = false;
 			failedSents.push({
 				word: currentKeyword,
@@ -179,13 +213,17 @@ var Flow = (function(){
 				stack: stringifyCallStack('    ')
 			});
 			// fails of action steps are understood like errors and terminate scenario execution
-			if(currentKeyword != 'Then' ) runtimeError(
+			// in block Finally any failed step terminates whole feature
+			if(currentKeyword != 'Then' || finallyExecuted) runtimeError(
 				'step error',
 				'Action step '.concat(quote(currentKeyword,' ',sent), ' failed')
 			);
 		},
 		setCurrentKeyword: function(word){
 			currentKeyword = word;
+		},
+		skipFeature: function(){
+			return skipFeature;
 		},
 		valid: function(){
 			return !blockError;
@@ -303,17 +341,12 @@ var Core = (function(){
 
 		//excluding row with names TODO describe
 		table.forfurther(0, function(row){
-			Flow.nextBlock(); // markers reset
 			if(params.length == row.length){
 				// assign values from the table row to procedure parameters
 				for (var i = 0; i < params.length; i++) {
 					variables[params[i]] = row[i];
 				}
 				runSteps(procedure.steps);
-				if(procedure == procedures[0] && finallyBuffer && !Flow.isAborted()){
-					debug('run final');
-					runSteps(finallyBuffer);
-				}
 			}else{
 				//TEMPORARY to avoid printing failed procedure in callStack with old variables
 				var called = callStack.pop();
@@ -322,6 +355,17 @@ var Core = (function(){
 					"Procedure 'name' has 'params.length' parameters, but got "+row.length+" arguments",
 				procedure);
 				callStack.push(called);
+			}
+			if(procedure == procedures[0]){
+				if(finallyBuffer && !Flow.isAborted()){
+					debug('run final');
+					Flow.nextBlock(Flow.FINALLY);
+					runSteps(finallyBuffer);
+				}
+				if( !Flow.skipFeature()){
+					Flow.nextBlock(Flow.OUTLINE_ITERATION);
+				}
+				else debug('Feature is skipped');
 			}
 		});
 	}
@@ -389,7 +433,7 @@ var Core = (function(){
 							case DATA_TABLE: runCycledProcedure(procedure, arg);
 						}
 					}
-					debug('pop '+callStack.last().name);
+					debug('pop '+quote(callStack.last().name));
 					callStack.pop();
 					variables = callStack.last().vars;
 				}else callError("Attempt to access invalid procedure 'name'",procedure);
@@ -398,6 +442,7 @@ var Core = (function(){
 				if(collectSentence(step, sentence)){
 					interpret(word, sentence.join(''), arg);
 				}
+				else debug('For this sentence Flow is invalid');
 			}
 		},
 		pushDefinition: function(word, def){
@@ -437,21 +482,17 @@ var Engine = (function(){
 	return {
 		addFinallyBlock: function(){
 			debug('Add finally');
-			if(loadedProcedure){
-				if(loadedProcedure == procedures[0]){
-					finallyBuffer = [];
-					Flow.nextBlock(); // to change currentKeyword in Flow
-				}
-				else Flow.loadError("Unexpected block Finally", loadedProcedure);
-			}else{
-			// scenario execution	
+			finallyBuffer = [];
+			if( !loadedProcedure){
+				// scenario execution
 				if( !Flow.isAborted()){
-					finallyBuffer = [];
-					Flow.nextBlock();
-					finallyExecuted = true;
+					Flow.nextBlock(Flow.FINALLY); 
 					debug('Finally is executed');
 				}
 				else debug('Finally is omitted');
+			}
+			else if(loadedProcedure != procedures[0]){
+				Flow.loadError("Unexpected block Finally", loadedProcedure);
 			}
 		},
 		// appends step to loading procedure or scenario outline

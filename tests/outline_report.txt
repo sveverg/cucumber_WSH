@@ -13,9 +13,4 @@ Scenario failed
 Scenario "middle syntax error" begins
     Raised syntax error: Unexpected position of quote in " And syntax error
 Scenario failed
-    Failed "Then sum is 11"
-    In Procedure: middle syntax error
-        first: 3
-        second: 8
-        sum: 11
 

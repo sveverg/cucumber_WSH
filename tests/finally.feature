@@ -63,11 +63,10 @@ Finally:
 	When print
 		"Finally should be called"
  
-# TEMPORARY it fails
 Scenario: Finally block is aborted by next Scenario
 	#It used to stretch through Scenario declaration
 	Then failed step
 	#If we are still in Finally, failed Then causes fatal error and aborts execution
 	When print
-		"Step should be omitted"
+		"Step should be called"
 

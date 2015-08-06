@@ -2,34 +2,34 @@ Scenario "print something" begins
         Message: "something"
 Scenario passed
 
-Scenario "check, that failed Given aborts Scenario without calling Finally" begins
+Scenario "failed Given aborts Scenario without calling Finally" begins
     Raised step error: Action step "Given failed step" failed
 Scenario failed
     Failed "Given failed step"
 
-Scenario "check, that failed When finishes Scenario and calls Finally" begins
+Scenario "failed When finishes Scenario and calls Finally" begins
     Raised step error: Action step "When failed step" failed
         Message: "Finally step should be called"
 Scenario failed
     Failed "When failed step"
 
-Scenario "check, that failed Then does not stop Scenario execution" begins
+Scenario "failed Then does not stop Scenario execution" begins
         Message: "Next step should be called"
         Message: "Finally step should be called too"
 Scenario failed
     Failed "Then failed step"
 
-Scenario "check, that syntax error after Given aborts Scenario without calling Finally" begins
+Scenario "syntax error after Given aborts Scenario without calling Finally" begins
     Raised syntax error: Unexpected position of quote in " And syntax error
 Scenario failed
 
-Scenario "check, that syntax error after When finishes Scenario and calls Finally" begins
+Scenario "syntax error after When finishes Scenario and calls Finally" begins
     Raised syntax error: Unexpected position of quote in " And syntax error
         Message: "Finally step should be called"
 Scenario failed
     Failed "Then failed step"
 
-Scenario "check, that syntax error after Then does not finish anything" begins
+Scenario "syntax error after Then finishes Scenario and calls Finally" begins
     Raised syntax error: Unexpected position of quote in "And syntax error
         Message: "Finally should be called"
 Scenario failed
@@ -38,4 +38,17 @@ Scenario "Finally block is aborted by next Scenario" begins
         Message: "Step should be called"
 Scenario failed
     Failed "Then failed step"
+
+Scenario "Finally error stops outline cycle" begins
+        Message: "Cycle passed"
+        Message: "Finally passed"
+    Raised fatal step error: Action step "Then failed step" failed in block Finally
+    In Procedure: Finally error stops outline cycle
+        number: 1
+        word: one
+Scenario failed
+    Failed "Then failed step"
+    In Procedure: Finally error stops outline cycle
+        number: 1
+        word: one
 

@@ -12,7 +12,7 @@ When(/^failed step$/, function(){
 	return false;
 });
 When(/^print$/, function(mes){
-	alert("        Message: "+mes);
+	if(mes) alert("        Message: "+mes);
 });
 When(/^printline"(.+)"$/,function(str){
 	alert('        Line: '+str);

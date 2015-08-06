@@ -10,6 +10,7 @@ var callStack = [{
 	name: 'headElement',
 	vars: []
 }];
+//fd Finally error interrupts whole feature
 
 // Stores sequence of Finally block steps in currentlly loaded Scenario || Outline
 // becomes UNDEFINED at the beginning of next scenario
@@ -65,6 +66,7 @@ var Flow = (function(){
 	// Common: nothing marked invalid
 	//TODO check procedure errors handling and sth like that(without Given, but need abort)
 	var runtimeError = function(errorName, msg, dataObject){
+		debug('Runtime error called');
 		blockError = true;
 		passed = false;
 		if(finallyExecuted){
@@ -97,9 +99,8 @@ var Flow = (function(){
 		return str;
 	}
 
-	var stringifyFail = function(failed, msg){
-		if( !msg) msg='';
-		msg = msg.concat("Failed ",quote(failed.word," ",failed.sent));
+	var stringifyFail = function(failed){
+		msg = "Failed "+quote(failed.word," ",failed.sent);
 		if(failed.arg) msg = msg.concat(" called with ",failed.arg);
 		if(failed.stack.length) msg += '\n'+failed.stack;
 		return msg;
@@ -107,8 +108,9 @@ var Flow = (function(){
 
 	var stringifyFailedSents = function(){
 		var str = "";
+		debug('Number of failed sentences '+failedSents.length);
 		failedSents.foreach(function(failed){
-			str += INDENT + stringifyFail(failed, str);
+			str += INDENT + stringifyFail(failed)+'\n';
 		});
 		return str; 
 	}
@@ -181,8 +183,10 @@ var Flow = (function(){
 			if(scenarioName){
 				alert('Scenario '.concat((passed) ? 'passed':'failed'));
 				var str = stringifyFailedSents();
-				if(str.length) alert(str+'\n');
+				if(str.length) alert(str);
 				else alert();
+			}else{
+				debug('Void call');
 			}
 			if(!skipFeature){
 				scenarioName = name;
@@ -194,6 +198,7 @@ var Flow = (function(){
 					if(tags) alert("It has tags "+tags.join());
 				}
 			}else{
+				debug('skip feature');
 				// to avoid repeating same report
 				scenarioName = undefined;
 				// and blockError stays true, nothing is executed
@@ -212,6 +217,7 @@ var Flow = (function(){
 				arg: arg,
 				stack: stringifyCallStack('    ')
 			});
+			debug('failed sentence remembered');
 			// fails of action steps are understood like errors and terminate scenario execution
 			// in block Finally any failed step terminates whole feature
 			if(currentKeyword != 'Then' || finallyExecuted) runtimeError(
@@ -336,8 +342,9 @@ var Core = (function(){
 		debug('runCycledProcedure');
 		// names of table columns can be redefined using keyword 'With'
 		var params = (procedure.params) ? procedure.params : table[0]; 
-		//to get more sane messages about number of procedure parameters
-		procedure.params = params; 
+		// Doubtful approach: procedure will remember parameters names after first call and use them later
+		// // to get more sane messages about number of procedure parameters
+		// procedure.params = params; 
 
 		//excluding row with names TODO describe
 		table.forfurther(0, function(row){
@@ -346,13 +353,14 @@ var Core = (function(){
 				for (var i = 0; i < params.length; i++) {
 					variables[params[i]] = row[i];
 				}
+				debug('procedure length '+procedure.steps.length);
 				runSteps(procedure.steps);
 			}else{
 				//TEMPORARY to avoid printing failed procedure in callStack with old variables
 				var called = callStack.pop();
 				callError(
 					"Data Table row |"+row.join('|')+'|\n' +
-					"Procedure 'name' has 'params.length' parameters, but got "+row.length+" arguments",
+					"Procedure 'name' has "+params.length+" parameters, but got "+row.length+" arguments",
 				procedure);
 				callStack.push(called);
 			}
@@ -493,12 +501,14 @@ var Engine = (function(){
 			}
 			else if(loadedProcedure != procedures[0]){
 				Flow.loadError("Unexpected block Finally", loadedProcedure);
+				finallyBuffer = undefined;
 			}
 		},
 		// appends step to loading procedure or scenario outline
 		appendToLoading: function(word, step, arg){
 			if(loadedProcedure){
-				loadedProcedure.steps.push({
+				((finallyBuffer) ? finallyBuffer : loadedProcedure.steps)
+				.push({
 					word: word,
 					step: step,
 					arg: arg
@@ -515,12 +525,14 @@ var Engine = (function(){
 		finish: Flow.nextScenario,
 		newOutline: function(name, tags){
 			Flow.nextScenario(name, tags);
+			finallyBuffer = undefined;
 			Core.resetVariables();
 			procedures[0] = {name: name, params: undefined, steps: []};
 			loadedProcedure = procedures[0];
 		},
 		newProcedure: function(name, params){
 			Flow.nextScenario();// to print report and insert new line
+			finallyBuffer = undefined;
 
 			debug("Engine: Loading Procedure "+name);
 			if( !procedures[name]){

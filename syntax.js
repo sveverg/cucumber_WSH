@@ -7,10 +7,15 @@ var debug = function(msg){
 var GherkinLine = (function(){
 	function GherkinLine(line){
 		this.val = line;
-	} 
+	}; 
+	// This construction is used to describe sequence of mutually exclusive blocks.
+	// Passed block interrupts any attempts to execute blocks down the sequence
+	//      by returning Idle object with empty methods.
+	// Block fails, when its condition fails or handler returns true.
+	//      In that case next blocks will be attempted to execute.
+	// If condition fails, block handler will never be called.
 	GherkinLine.prototype.chain = function(condition, handler){
-		if(condition && handler) handler.call(this);
-		return (condition) ? Idle : this;
+		return (condition && !(handler && handler.call(this)) ) ? Idle : this;
 	};
 	GherkinLine.prototype.empty = function(handler){
 		return this.chain(this.val.length == 0, handler);
@@ -21,10 +26,11 @@ var GherkinLine = (function(){
 	GherkinLine.prototype.other = function(handler){
 		handler.call(this);
 	};
-	// Pattern can be string or string array
-	// In case of coincidence, stores suited value at this.firstPart,
-	//                  and the rest part of string in this.lastPart
-	GherkinLine.prototype.startsWith = function(pattern, handler){
+	// Last argument is interpreted like handler function, previous like matching patterns.
+	// Each pattern can be string or string array.
+	// In case of coincidence, function stores suited value at this.firstPart,
+	//                           and the rest part of string at this.lastPart.
+	GherkinLine.prototype.startsWith = function(/*patterns, handler*/){
 		var p_this = this;
 		var startsWithString = function(str){
 			if(p_this.val.substr(0, str.length) == str){
@@ -34,9 +40,16 @@ var GherkinLine = (function(){
 			}
 			else return false;
 		}
-		// TEMPORARY array check 
-		return this.chain((pattern[0]) ? pattern.some(startsWithString) : startsWithString(pattern),
-		                  handler);
+		// if last argument is function, exclude it from pattern list
+		if(typeof arguments[arguments.length-1] == 'function'){
+			var handler = Array.prototype.pop.call(arguments);
+		}
+		return this.chain(
+			Array.prototype.some.call(arguments, function(pattern){
+				// TEMPORARY array check 
+				return (pattern[0]) ? pattern.some(startsWithString) : startsWithString(pattern);
+			}),
+		handler);
 	};
 	var Idle = {};
 	for(key in GherkinLine.prototype){
@@ -49,6 +62,7 @@ var GherkinLine = (function(){
 	GherkinLine.prototype.PASSED = Idle;
 	return GherkinLine;
 })();
+
 
 var DOC_STRING_MARK      = '"""';
 var EXAMPLES_ANNOTATION  = 'Examples:';
@@ -182,6 +196,8 @@ var Buffer = (function(){
 })();
 
 var Syntax = (function(){
+	// will be in configuration file
+	var INTERRUPT_DOC_STRING_ON_SCENARIO = true;
 
 	//------- LIST OF PARSER STATES -------
 	
@@ -241,15 +257,54 @@ var Syntax = (function(){
 			case READING_EXAMPLES: alert('reading Examples');
 				break;
 			case STANDARD: alert('standard');
+				break;
+			default: alert('Error');
 		}
 	}
 
-	var docStringMarkHandler = function(){
-		if(state == READING_DOC_STRING){ 
-			Buffer.addArgument(argBuffer);
-			argBuffer = [];
-			state = STANDARD;
-		}else state = READING_DOC_STRING;
+	// Function is executed before analyzing meaningful cases,
+	// is parser state is not STANDARD or READING_DESCRIPTION.
+	// It returns true, if current line parsing should be interrupted.
+	var handleSpecialStates = function(){
+		switch(state){
+			case EXPECTING_SCENARIO: 
+				// check "flying" tag list without following scenario
+				if(this.startsWith(SCENARIO_HEADINGS, EXAMPLES_ANNOTATION) != this.PASSED){
+					Buffer.sendError("Unexpected position of tags "+tagBuffer.join());
+					tagBuffer = [];
+					state = STANDARD;
+				}
+			break;
+			case READING_DATA_TABLE:
+				// check end of DataTable(it's not marked anyhow)
+				if( this.startsWith('|') != this.PASSED){
+					Buffer.addArgument(argBuffer);
+					argBuffer = [];
+				}
+			break;
+			case READING_DOC_STRING:
+				if(this.startsWith(SCENARIO_HEADINGS, PROCEDURE_ANNOTATION) == this.PASSED
+				&& INTERRUPT_DOC_STRING_ON_SCENARIO){
+					Buffer.sendError("DocString includes keyword "+quote(this.firstPart)+
+						'\nSymbol """ is very likely to be mistakenly omitted.')
+					state = STANDARD;
+				}else if(this.startsWith(DOC_STRING_MARK) != this.PASSED){
+					argBuffer.push(this.val);
+					return false; // interrupt chain
+				}
+			break;
+			case READING_EXAMPLES:
+				// check end of DataTable after keyword Examples
+				if(this.startsWith('|') != this.PASSED){
+					Buffer.addExamples(argBuffer,tagBuffer);
+					argBuffer = [];
+					tagBuffer = [];
+					state = STANDARD;
+					// debug('Examples ended');
+				}
+			break;
+		}
+		return true; // continue line parsing
 	};
 
 	var procedureHandler = function(){
@@ -292,6 +347,9 @@ var Syntax = (function(){
 
 	return{
 		finish: function(){
+			// alert(new GherkinLine("#5 12").startsWith('#5').content());
+			// alert(GherkinLine.prototype.PASSED.content());
+			// alert({a: 2, b: 7, c: function(){}}.content());
 			debug('Syntax.finish()');
 			if(state == READING_DATA_TABLE){
 				Buffer.addArgument(argBuffer);
@@ -315,44 +373,34 @@ var Syntax = (function(){
 			Buffer.finish();
 		},
 		parse: function(nextLine){
-			var line = trim(nextLine);
+			// assert(new GherkinLine("Scenario: unexpected").startsWith(SCENARIO_HEADINGS, function(){
+			// 	return true;
+			// }) != new GherkinLine(34).PASSED, "startsWith doesn't work properly");
 
-			new GherkinLine(line).empty().startsWith('#')/*comment*/.exec(function(){
-				// check for "flying" tag list without following scenario
-				if(state == EXPECTING_SCENARIO && 
-					this.startsWith(SCENARIO_HEADINGS).startsWith(EXAMPLES_ANNOTATION) != this.PASSED)
-				{
-					Buffer.sendError("Unexpected position of tags "+tagBuffer.join());
-				}
-				// check for end of DataTable(it's not marked anyhow)
-				else if(state == READING_DATA_TABLE && this.startsWith('|') != this.PASSED){
+			var line = trim(nextLine);
+			new GherkinLine(line).empty().startsWith('#')/*comment*/
+			.chain(state != STANDARD && state != READING_DESCRIPTION, handleSpecialStates)
+			//
+			.startsWith(DOC_STRING_MARK, function(){
+				if(state == READING_DOC_STRING){ 
 					Buffer.addArgument(argBuffer);
 					argBuffer = [];
-				}
-				// check for end of DataTable after keyword Examples
-				else if(state == READING_EXAMPLES && this.startsWith('|') != this.PASSED){
-					Buffer.addExamples(argBuffer,tagBuffer);
-					argBuffer = [];
-					tagBuffer = [];
 					state = STANDARD;
-				}
-				// chain is stopped in the case of tag error, but table end doesn't affect
-				return App.gotError;
-			})
-			.startsWith(DOC_STRING_MARK,     docStringMarkHandler)
-			.chain(state == READING_DOC_STRING, function(){
-				argBuffer.push(line);
+				}else state = READING_DOC_STRING;
 			})
 			// tag
 			.startsWith('@', function(){
 				state = EXPECTING_SCENARIO;
 				// TEMPORARY
-				tagBuffer.push(word);
+				tagBuffer.push(this.val.split(',').apply(trim).filter(function(str){
+					return str.charAt(0) == '@';
+				}));
 			})
 			// table row
 			.startsWith('|', function(){
-				if(state != READING_EXAMPLES) 
+				if(state != READING_EXAMPLES){
 					state = READING_DATA_TABLE;
+				}
 				argBuffer.push(line.split('|').apply(trim).filter(function(str){
 					return str.length > 0;
 				}));
@@ -374,6 +422,7 @@ var Syntax = (function(){
 			})
 			.startsWith(PROCEDURE_ANNOTATION, procedureHandler)
 			.startsWith(SCENARIO_HEADINGS, function(){
+				debug('Starts with Scenario headings');
 				var tags = (tagBuffer.length) ? tagBuffer : undefined;
 				expectVariables = (this.firstPart == OUTLINE_ANNOTATION);
 				Buffer.newBlock(this, trim(this.lastPart), tags);

@@ -1,3 +1,15 @@
+var State = {
+	// Terminates scenario without calling Finally
+	ABORTED: 10,
+	// Executing Finally(also records steps to procedures[FINALLY])
+	FINALLY: 11, 
+	// Loading procedure, outline body, finally, background...
+	// whatever loadedProcedure points at.
+	LOADING: 12,
+	//
+	SCENARIO_BODY: 13
+};
+
 // stores procedures in the object form: procedures[name] = {
 //		params: array of procedure parameters(strings)
 //		steps: array of steps(string arrays)
@@ -5,9 +17,18 @@
 // also has special vault procedures[0] to store Scenario Outline steps
 var procedures = [];
 
-// Stores sequence of Finally block steps in currentlly loaded Scenario || Outline
-// becomes UNDEFINED at the beginning of next scenario
-var finallyBuffer;
+var SCENARIO = 0;
+
+// If procedure can't be loaded to procedures[name], ex. name is duplicated
+// then it's loaded to procedures[CARANTINE]
+// to avoid long list of errors "Engine: sentence 'step' is loaded to an undefined procedure"
+// It exists for some time, but can't be called
+var CARANTINE = 1;
+// This cell is used to store Finally blocks
+// It can be pointed by loadedProcedure in appendToLoading()
+// or accessed directly in run()
+var FINALLY = 2;
+
 
 var Core = (function(){
 	/* Lists, containing step definition objects
@@ -35,11 +56,11 @@ var Core = (function(){
 	//TODO comments
 	var callStack = [{
 		name: 'headElement',
-		vars: []
+		vars: {}
 	}];
 
 	// used to correspond names of step variables and Scenario Examples \ Procedure arguments
-	var variables = {};
+	var variables = callStack[0].vars;
 
 	//shortcut for FLow.runtimeError
 	var callError = function(msg, procedure){
@@ -108,13 +129,26 @@ var Core = (function(){
 				"Sentence 'sentence' doesn't fit any step definition from group 'keyword'",
 			{keyword: keyword, sentence: sent});
 		}
-		if(funcRes === false) Flow.sentenceFailure(sent, arg);
+		if(funcRes === false){
+			debug('sentenceFailure called');
+			Log.addFail(keyword, sent, arg);
+			// fails of action steps are understood like errors and terminate scenario execution
+			if(keyword != 'Then') Flow.runtimeError(
+				'step error',
+				'Action step '.concat(quote(keyword,' ',sent), ' in Finally block failed')
+			);
+			// in block Finally any failed step execution
+			else if(Flow.state() == State.FINALLY) Flow.runtimeError(
+				'step error',
+				'Check '.concat(quote(keyword,' ',sent), ' in Finally block failed')
+			);
+		}
 		return funcRes;
 	};
 
-	// TODO behavior of final should be changable
+	// TODO behavior of finalBlock should be changeable
 	// TODO test Given fail in the middle.
-	function runCycledProcedure(procedure, table){
+	function runCycledProcedure(procedure, table, callback){
 		debug('runCycledProcedure');
 		// names of table columns can be redefined using keyword 'With'
 		var params = (procedure.params) ? procedure.params : table[0]; 
@@ -129,6 +163,7 @@ var Core = (function(){
 				for (var i = 0; i < params.length; i++) {
 					variables[params[i]] = row[i];
 				}
+				debug(variables.content());
 				debug('procedure length '+procedure.steps.length);
 				runSteps(procedure.steps);
 			}else{
@@ -140,18 +175,12 @@ var Core = (function(){
 				procedure);
 				callStack.push(called);
 			}
-			if(procedure == procedures[0]){
-				if(finallyBuffer && !Flow.isAborted()){
-					debug('run final');
-					Flow.nextBlock(Flow.FINALLY);
-					runSteps(finallyBuffer);
-				}
-				if( !Flow.skipFeature()){
-					Flow.nextBlock(Flow.OUTLINE_ITERATION);
-				}
-				else debug('Feature is skipped');
-			}
+			if(callback) callback();
 		});
+		// reset of used variables
+		for (var i = 0; i < params.length; i++) {
+			variables[params[i]] = undefined;
+		}
 	}
 
 	function runSteps(steps, defaultArg){
@@ -193,6 +222,9 @@ var Core = (function(){
 	};
 
 	return {
+		callStack: function(){
+			return callStack;
+		},
 		execute: function(word, step, arg){
 			debug('Execute '+word+' '+step.join("'"));
 			Flow.setCurrentKeyword(word);
@@ -236,31 +268,45 @@ var Core = (function(){
 				alert("Engine: Wrong definition kind +'"+word+"'");
 			}
 		},
-		stringifyCallStack: function(indent){
-			var str = '', props;
-			//debug('CSL'+callStack.length);
-			//zero element is headElement, it's not printed
-			for (var i = callStack.length - 1; i > 0; i--) {
-				str += indent+'In Procedure: '+callStack[i].name;
-				props = callStack[i].vars.content(indent+'    ');
-				if(props.length){
-					str = str.concat('\n',props);
+		// @param {hasFinally} whether executed scenario has block Finally
+		runScenario: function(hasFinally){
+			// space for Background
+			Flow.setState(State.SCENARIO_BODY);
+			runSteps(procedures[SCENARIO].steps);
+			if(hasFinally && Flow.state() != State.ABORTED){
+				Flow.setState(State.FINALLY);
+				runSteps(procedures[FINALLY].steps);
+			}
+			// space for Afterwards 
+		},
+		runOutline: function(examples, hasFinally){
+			// used to call finally after each examples row
+			// and avoid outline interruption after first error occurred
+			var cycleCallback = function(){
+				if(hasFinally && Flow.state() != State.ABORTED){
+					debug('run final');
+					Flow.setState(State.FINALLY);
+					runSteps(procedures[FINALLY].steps);
 				}
-			};
-			return str;
+				// block errors reset
+				Flow.setState(State.SCENARIO_BODY);
+			}
+			// first execution
+			if(Flow.state() == State.LOADING){
+				//space for Background
+			}
+			// if scenario execution is permitted by Flow
+			if(Flow.state() != State.ABORTED){
+				// TODO local methods should not change Flow state(!)
+				Flow.setState(State.SCENARIO_BODY);
+				// function is executed after every row of examples
+				runCycledProcedure(procedures[SCENARIO], examples, cycleCallback);
+			}
 		}
 	};
 })();
 
 var Engine = (function(){
-
-	//TODO add var OUTLINE = 0
-
-	// If procedure can't be loaded to procedures[name], ex. name is duplicated
-	// then it's loaded to procedures[CARANTINE]
-	// to avoid long list of errors "Engine: sentence 'step' is loaded to an undefined procedure"
-	// It exists for some time, but can't be called
-	var CARANTINE = 1;
 
 	var ENGINE_DEBUG = true;
 
@@ -272,102 +318,106 @@ var Engine = (function(){
 		if(ENGINE_DEBUG && App.debug) alert('Engine: '+msg);
 	}
 
+	var isNotProcedure = function(loadedBlock){
+		return loadedBlock == procedures[SCENARIO] || loadedBlock == procedures[FINALLY];
+	}
+
+	var loadError = function(msg, procedure){
+		Log.print('Load error: '+msg);
+		if(procedure){
+			procedure.invalid = true;
+			Log.print('Happened in procedure '+quote(procedure.name));
+		} 
+		Log.print();
+	}
+
 	return {
 		addFinallyBlock: function(){
-			debug('Add finally');
-			finallyBuffer = [];
-			if( !loadedProcedure){
-				// scenario execution
-				if( !Flow.isAborted()){
-					Flow.nextBlock(Flow.FINALLY); 
-					debug('Finally is executed');
-				}
-				else debug('Finally is omitted');
+			// Flow.printState();
+			if(loadedProcedure == procedures[SCENARIO]){
+				procedures[FINALLY] = {
+					name: quote(loadedProcedure.name) + "'s Finally",
+					steps: []
+				};
+				loadedProcedure = procedures[FINALLY];
 			}
-			else if(loadedProcedure != procedures[0]){
-				Flow.loadError("Unexpected block Finally", loadedProcedure);
-				finallyBuffer = undefined;
+			else if(loadedProcedure == procedures[FINALLY]){
+			     loadError("Second block Finally is not allowed", loadedProcedure);
 			}
+			else loadError("Block Finally after procedure is not allowed", loadedProcedure);
 		},
 		// appends step to loading procedure or scenario outline
 		appendToLoading: function(word, step, arg){
-			if(loadedProcedure){
-				((finallyBuffer) ? finallyBuffer : loadedProcedure.steps)
-				.push({
+			Flow.printState();
+			if(Flow.state() == State.LOADING){
+				loadedProcedure.steps.push({
 					word: word,
 					step: step,
 					arg: arg
 				});
-			}else{
-				alert("Engine: sentence '"+step+"'\n is loaded to an undefined procedure");
+			}else if(Flow.state() != State.ABORTED){
+				// TODO add array support to Log
+				Flow.runtimeError(
+					"syntax error",
+					"Unexpected step ".concat(quote(word,' ',step)," after Examples block")
+				);
 			}
 		},
+		//TODO move this check to Flow
 		catchSyntaxError: function(msg){
-			if(loadedProcedure && loadedProcedure != procedures[0]) Flow.loadError(msg, loadedProcedure);
+			if(Flow.state() == State.LOADING && loadedProcedure != procedures[0]){
+				loadError(msg, loadedProcedure);
+			}
 			else Flow.runtimeError('syntax error', msg);
 		},
-		// to get last report
-		finish: Flow.nextScenario,
-		newOutline: function(name, tags){
-			Flow.nextScenario(name, tags);
-			finallyBuffer = undefined;
-			procedures[0] = {name: name, params: undefined, steps: []};
-			loadedProcedure = procedures[0];
-		},
-		newProcedure: function(name, params){
-			Flow.nextScenario();// to print report and insert new line
-			finallyBuffer = undefined;
-
-			debug("Engine: Loading Procedure "+name);
-			if( !procedures[name]){
-				procedures[name] = {name: name, params: params, steps: []};
-				loadedProcedure = procedures[name];
-			}else{
-				Flow.loadError("there is another procedure with name "+name);
-				procedures[CARANTINE] = {name: name, params: undefined, steps: []};
-				loadedProcedure = procedures[CARANTINE];
+		finishLoad: function(){
+			if(isNotProcedure(loadedProcedure)){
+				// if scenario was no times executed, but also wasn't aborted 
+				if(Flow.state() == State.LOADING){
+					// suggest, it's not scenario outline, and execute it
+					// argument hasFinally
+					Core.runScenario(loadedProcedure == procedures[FINALLY]);
+				}else{
+					// suggest, it's scenario outline
+					// execute Afterwards by Core
+				}
+				Log.printReport();
 			}
+		},
+		// TODO defense against numeric procedure names
+		newProcedure: function(name, params){
+			debug("Loading Procedure "+name);
+			Flow.setState(State.LOADING);
+			var procName = name;
+			if(procedures[name]){
+				loadError("there is another procedure with name "+name);
+				procName = CARANTINE;
+			} 
+			procedures[procName] = {name: name, params: params, steps: []};
+			loadedProcedure = procedures[procName];
 		},
 		newScenario: function(name, tags){
-			debug('New scenario '+quote(name));
-			if(loadedProcedure) loadedProcedure = undefined;
-			Flow.nextScenario(name, tags);
-			// to avoid steps recording and their following reiteration
-		},
-		run: function(word, step, arg){
-			if(finallyBuffer){
-				 // finally block of scenario
-				if( !Flow.isAborted()){
-					debug('We are in Finally block of Scenario');
-					Core.execute(word, step, arg);
-					finallyBuffer.push({
-						word: word,
-						step: step,
-						arg: arg
-					});
-				}
+			if(Flow.allowsScenario(name, tags)){
+				Flow.setState(State.LOADING);
+				Log.recordScenario(name, tags);
+				procedures[SCENARIO] = {name: name, steps: []};
+				loadedProcedure = procedures[SCENARIO];
 			}else{
-				// main part of scenario
-				// OR can be omitted Finally part: in that case Flow.valid() == false
-				if(Flow.valid()) Core.execute(word, step, arg);
-				else debug('This is ignored');
-			}
+				Flow.setState(State.ABORTED);
+				debug('Scenario '+quote(name)+'is omitted');
+			} 
 		},
 		// runs loaded outline with following examples table
 		runOutline: function(examples, exampleTags){
 			debug('runOutline');
-			if(loadedProcedure && loadedProcedure == procedures[0]){ 
-				// Scenario Outline
-				// TODO call Flow method and pass exampleTags to it
-				if( !loadedProcedure.invalid){
-					// Trick to call Outline like usual procedure
-					// First argument has no meaning and written for debugging purpose
-					// Second forces Core to check for procedures[0], which exist, and call it.
-					// TODO add defense against numeric steps 
-					Core.execute('Run procedure',[0], examples);
-				}else callError("Scenario Outline 'name' has syntax error and can't be executed",
-				      loadedProcedure);
-			}else alert('Engine: Not found Scenario Outline to use this Examples for.');
+			if(isNotProcedure(loadedProcedure)){
+				if(Flow.allowsExamples(exampleTags)){
+					// second argument {hasFinally}
+					Core.runOutline(examples, loadedProcedure == procedures[FINALLY]);
+				}
+				else debug('Examples are omitted');
+			}
+			else loadError("Procedure can't be executed with Examples", loadedProcedure);
 		}
 	};
 })();

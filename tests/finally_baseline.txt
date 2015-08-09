@@ -3,12 +3,12 @@ Scenario "print something" begins
 Scenario passed
 
 Scenario "failed Given aborts Scenario without calling Finally" begins
-    Raised step error: Action step "Given failed step" failed
+    Raised step error: Action step "Given failed step" in Finally block failed
 Scenario failed
     Failed "Given failed step"
 
 Scenario "failed When finishes Scenario and calls Finally" begins
-    Raised step error: Action step "When failed step" failed
+    Raised step error: Action step "When failed step" in Finally block failed
         Message: "Finally step should be called"
 Scenario failed
     Failed "When failed step"
@@ -19,19 +19,16 @@ Scenario "failed Then does not stop Scenario execution" begins
 Scenario failed
     Failed "Then failed step"
 
-Scenario "syntax error after Given aborts Scenario without calling Finally" begins
+Scenario "syntax error after Given prevents execution" begins
     Raised syntax error: Unexpected position of quote in " And syntax error
 Scenario failed
 
-Scenario "syntax error after When finishes Scenario and calls Finally" begins
+Scenario "syntax error after When prevents execution" begins
     Raised syntax error: Unexpected position of quote in " And syntax error
-        Message: "Finally step should be called"
 Scenario failed
-    Failed "Then failed step"
 
-Scenario "syntax error after Then finishes Scenario and calls Finally" begins
+Scenario "syntax error after Then prevents execution" begins
     Raised syntax error: Unexpected position of quote in "And syntax error
-        Message: "Finally should be called"
 Scenario failed
 
 Scenario "Finally block is aborted by next Scenario" begins
@@ -42,13 +39,13 @@ Scenario failed
 Scenario "Finally error stops outline cycle" begins
         Message: "Cycle passed"
         Message: "Finally passed"
-    Raised fatal step error: Action step "Then failed step" failed in block Finally
-    In Procedure: Finally error stops outline cycle
+    Raised fatal step error: Check "Then failed step" in Finally block failed
+    In Scenario: Finally error stops outline cycle
         number: 1
         word: one
 Scenario failed
     Failed "Then failed step"
-    In Procedure: Finally error stops outline cycle
+    In Scenario: Finally error stops outline cycle
         number: 1
         word: one
 

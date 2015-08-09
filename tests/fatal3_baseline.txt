@@ -1,5 +1,5 @@
 Scenario "failed condition in Finally stops feature execution" begins
-    Raised fatal step error: Action step "Then failed step" failed in block Finally
+    Raised fatal step error: Check "Then failed step" in Finally block failed
 Scenario failed
     Failed "Then failed step"
 

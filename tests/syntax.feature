@@ -1,5 +1,4 @@
 # tests output for different types of syntax errors
- 
 Scenario: doubtful keyword
 	And print 
 		"12345"
@@ -33,7 +32,7 @@ Scenario: unexpected tags
 		"Next step OMITTED"
 Finally:
 	When print
-		"Finally REQUIRED"
+		"Finally OMITTED"
  
 Scenario: wrong order of keywords
 	When step

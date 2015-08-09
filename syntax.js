@@ -95,7 +95,7 @@ var Buffer = (function(){
 	var stepBuffer;
 	// Action to perform with new step: Engine.run || Engine.appendToLoading
 	// Managed by Buffer.newBlock()
-	var engineAction;
+	// var engineAction;
 
 	// If buffer contains any step, engineAction's preformed on it. 
 	// These actions are performed together, otherwise not cleaning buffer mistakenly 
@@ -104,11 +104,8 @@ var Buffer = (function(){
 		if(stepBuffer){
 			debug('Buffer executes: '+stepBuffer);
 			if(arg) debug("      with argument "+arg);
-			// engine action can be set undefined, for example, in #4.1
-			if(engineAction){
-				engineAction.call(Engine, previousKeyword, stepBuffer, arg);
-			}else 
-				stepError("It is incomprehensible, what to do with that step",previousKeyword,stepBuffer);
+			// TODO test #4.1
+			Engine.appendToLoading(previousKeyword, stepBuffer, arg);
 			stepBuffer = undefined;
 		}
 	}
@@ -137,7 +134,7 @@ var Buffer = (function(){
 		finish: function(){
 			debug('Buffer.finish()');
 			run_n_purge();
-			Engine.finish();
+			Engine.finishLoad();
 		},
 		load: function(gLine, step){
 			var keyword = gLine.firstPart;
@@ -169,20 +166,19 @@ var Buffer = (function(){
 		newBlock: function(gLine, name, arg){
 			run_n_purge();
 			previousKeyword = undefined;
-			gLine.startsWith(OUTLINE_ANNOTATION, function(){
-				engineAction = Engine.appendToLoading;
-				Engine.newOutline(name, arg);
+			gLine.startsWith(FINALLY_ANNOTATION,function(){
+				Engine.addFinallyBlock();
 			})
-			.startsWith(PROCEDURE_ANNOTATION, function(){
-				engineAction = Engine.appendToLoading;
-				Engine.newProcedure(name, arg);
+			// executed, if not FINALLY_ANNOTATION
+			.chain(true, function(){
+				Engine.finishLoad();
+				return true; // continue chain execution
 			})
-			.startsWith(SCENARIO_ANNOTATION, function(){
-				engineAction = Engine.run;
+			.startsWith(SCENARIO_HEADINGS, function(){
 				Engine.newScenario(name, arg);
 			})
-			.startsWith(FINALLY_ANNOTATION, function(){
-				Engine.addFinallyBlock();
+			.startsWith(PROCEDURE_ANNOTATION, function(){
+				Engine.newProcedure(name, arg);
 			})
 			.other(function(word){
 				Engine.catchSyntaxError("Wrong block kind "+word);
@@ -422,7 +418,7 @@ var Syntax = (function(){
 			})
 			.startsWith(PROCEDURE_ANNOTATION, procedureHandler)
 			.startsWith(SCENARIO_HEADINGS, function(){
-				debug('Starts with Scenario headings');
+				// debug('Starts with Scenario headings');
 				var tags = (tagBuffer.length) ? tagBuffer : undefined;
 				expectVariables = (this.firstPart == OUTLINE_ANNOTATION);
 				Buffer.newBlock(this, trim(this.lastPart), tags);

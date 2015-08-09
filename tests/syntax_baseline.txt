@@ -19,7 +19,6 @@ Scenario failed
 
 Scenario "unexpected tags" begins
     Raised syntax error: Unexpected position of tags @unexpected
-        Message: "Finally REQUIRED"
 Scenario failed
 
 Scenario "wrong order of keywords" begins

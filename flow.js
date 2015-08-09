@@ -1,35 +1,13 @@
-/* Controls execution of blocks Finally, Background and Ending.
-*  Accepts notifications about step failures and errors.
-*  Stores and prints information about executed scenario.*/
-var Flow = (function(){
+var Log = (function(){
 	var INDENT = '    ';
-	var STEP_JOIN_SYMBOL = "'";
 
-	// keyword of currently executed step
-	// required to define engine behavior in case of error || step failure
-	// see Flow.isAborted()
-	var currentKeyword;
-	// has error happened in current block: Finally, Outline iteration etc.
-	var blockError = false;
-
-	// contains list of failed steps like objects with properties
-	// { name, step, arg, stack: stringified call stack}
 	var failedSents = [];
 
-	var finallyExecuted = false;
-
 	var passed = true;
-
-	// Special mark, which prevents execution of any Scenario in file
-	// Right now triggered in case of syntax or runtime error in Finally block
-	// This mark prevents reset of blockError, so no more step definitions will be ever executed
-	var skipFeature = false;
-	//
 	var scenarioName;
 
-
 	var debug = function(msg){
-		if(App.debug) alert('Flow: '+msg);
+		if(App.debug) alert('Log: '+msg);
 	}
 
 	// returns obj[key1]...[keyN] or undefined
@@ -44,42 +22,29 @@ var Flow = (function(){
 		return property;
 	}
 
-	// Handles all the errors, which happened while Scenario was read || any steps executed 
-	// Common: nothing marked invalid
-	//TODO check procedure errors handling and sth like that(without Given, but need abort)
-	var runtimeError = function(errorName, msg, dataObject){
-		debug('Runtime error called');
-		blockError = true;
-		passed = false;
-		if(finallyExecuted){
-			skipFeature = true;
-			errorName = 'fatal '+errorName;
-			msg += ' in block Finally';
-		}
-		msg = substituteValues(msg, dataObject).replace(/\n/,'\n'+INDENT);
-		alert(INDENT.concat("Raised ",errorName,': ',msg));
-		var callStack = Core.stringifyCallStack(INDENT);
-		if(callStack.length) alert(callStack);
-	}
-
 	//single quote
 	var sq = function(str){
 		return "'".concat(str,"'");
 	}
 
-	// var stringifyCallStack = function(){
-	// 	var str = '', props;
-	// 	//debug('CSL'+callStack.length);
-	// 	//zero element is headElement, it's not printed
-	// 	for (var i = callStack.length - 1; i > 0; i--) {
-	// 		str += INDENT+'In Procedure: '+callStack[i].name;
-	// 		props = callStack[i].vars.content(INDENT+'    ');
-	// 		if(props.length){
-	// 			str = str.concat('\n',props);
-	// 		}
-	// 	};
-	// 	return str;
-	// }
+	var stringifyCallStack = function(indent){
+		var callStack = Core.callStack();
+		var str = '', props;
+		debug('CSL'+callStack.length);
+		//zero element is headElement, it's not printed
+		for (var i = callStack.length - 1; i >= 0; i--) {
+			props = callStack[i].vars.content(indent+'    ');
+			if(i > 0){
+				str = str.concat(indent,'In Procedure: ',callStack[i].name);
+				if(props.length){
+					str = str.concat('\n',props);
+				}
+			}else if(props.length){
+				str = str.concat(indent, 'In Scenario: ',scenarioName,'\n',props);
+			}
+		};
+		return str;
+	}
 
 	var stringifyFail = function(failed){
 		msg = "Failed "+quote(failed.word," ",failed.sent);
@@ -96,6 +61,7 @@ var Flow = (function(){
 		});
 		return str; 
 	}
+
 	// @param msg is string, that can contain groups in single quotes like 'property1. ... .propertyN'
 	// If dataObject[property1]...[propertyN] is defined, function substitutes this value 
 	// into string instead of 'group'. String values are wrapped in double quotes.
@@ -124,94 +90,135 @@ var Flow = (function(){
 		return msg;
 	}
 
-	return {
-		// block types
-		FINALLY: 1, 
-		OUTLINE_ITERATION: 2,
-		// will finally block be executed
-		isAborted: function(){
-			//if(App.debug) alert('Current keyword is '+currentKeyword);
-			// Example for variant "!currentKeyword" is Outline with syntax error
-			return blockError && (!currentKeyword || currentKeyword == 'Given');
-		},
-		// syntax errors, that happened during procedure loading
-		loadError: function(msg, procedure){
-			alert('Load error: '+msg.replace(/\n/,'\n'+INDENT));
-			// procedure can be undefined. ex: attempt to load procedure with duplicated name
-			if(procedure){
-				procedure.invalid = true;
-				alert('Happened in procedure '+quote(procedure.name));
+	return{
+		addError: function(errorName, msg, dataObject, fatal){
+			passed = false;
+			if(fatal){
+				errorName = 'fatal '+errorName;
 			}
-			alert();
+			msg = substituteValues(msg, dataObject).replace(/\n/,'\n'+INDENT);
+			alert(INDENT.concat("Raised ",errorName,': ',msg));
+			var callStack = stringifyCallStack(INDENT);
+			if(callStack.length) alert(callStack);
 		},
-		// @param {blockType} one of numeric constants, provided by Flow
-		nextBlock: function(blockType){
-			// without that reset step definitions won't be executed,
-			// because Core methods check Flow.valid()
-			if( !skipFeature){
-				blockError = false;
-				debug('blockError reset');
-			}
-			currentKeyword = undefined;
-			switch(blockType){
-				case this.FINALLY: finallyExecuted = true;
-					break;
-				case this.OUTLINE_ITERATION: finallyExecuted = false;
-					break;
-				default: alert('Wrong blockType for the Flow.nextBlock()');
-			}
+		addFail: function(word, sent, arg){
+			passed = false;
+			failedSents.push({
+				word: word,
+				sent: sent, 
+				arg: arg,
+				stack: stringifyCallStack(INDENT)
+			});
 		},
-		nextScenario: function(name, tags){
+		print: function(str){
+			alert((str) ? str.replace(/\n/,'\n'+INDENT) : '');
+		},
+		printReport: function(){
 			if(scenarioName){
 				alert('Scenario '.concat((passed) ? 'passed':'failed'));
 				var str = stringifyFailedSents();
+				// Redundant check?
 				if(str.length) alert(str);
 				else alert();
-			}else{
-				debug('Void call');
-			}
-			if(!skipFeature){
-				scenarioName = name;
-				failedSents = [];
-				blockError = false;
-				passed = true;
-				if(scenarioName){
-					alert("Scenario "+quote(scenarioName)+" begins");
-					if(tags) alert("It has tags "+tags.join());
-				}
-			}else{
-				debug('skip feature');
-				// to avoid repeating same report
+
 				scenarioName = undefined;
-				// and blockError stays true, nothing is executed
 			}
-			// syntax check continues
-			currentKeyword = undefined;
-			finallyExecuted = false;
+		},
+		recordScenario: function(name, tags){
+			failedSents = [];
+			passed = true;
+			scenarioName = name;
+			alert("Scenario "+quote(scenarioName)+" begins");
+			if(tags) alert("It has tags "+tags.join());
+		}
+	}
+})();
+
+/* Controls execution of blocks Finally, Background and Ending.
+*  Accepts notifications about step failures and errors.
+*  Stores and prints information about executed scenario.*/
+var Flow = (function(){
+	// keyword of currently executed step
+	// required to define engine behavior in case of error || step failure
+	// see Flow.isAborted()
+	var currentKeyword;
+
+	var state;
+
+	// has error happened in current block: Finally, Outline iteration etc.
+	var blockError = false;
+
+	// Special mark, which prevents execution of any Scenario in file
+	// Right now triggered in case of syntax or runtime error in Finally block
+	// This mark prevents reset of blockError, so no more step definitions will be ever executed
+	var skipFeature = false;
+
+	var debug = function(msg){
+		if(App.debug) alert('Flow: '+msg);
+	}
+
+	// Handles all the errors, which happened while Scenario was read || any steps executed 
+	// Common: nothing marked invalid
+	//TODO check procedure errors handling and sth like that(without Given, but need abort)
+	var runtimeError = function(errorName, msg, dataObject){
+		debug('Runtime error called');
+		blockError = true;
+		if(state == State.FINALLY){
+			skipFeature = true;
+		}else if(!currentKeyword || currentKeyword == 'Given'){
+			debug('Set state ABORTED');
+			debug('currentKeyword '+currentKeyword);
+			state = State.ABORTED;
+		}
+		Log.addError(errorName, msg, dataObject, state == State.FINALLY);
+	}
+
+	return {
+		allowsScenario: function(name, tags){
+			// TEMPORARY
+			return !skipFeature;
+		},
+		allowsExamples: function(tags){
+			return true;
+		},
+		printState: function(){
+			switch(state){
+				case State.ABORTED: debug('State: ABORTED');
+					break;
+				case State.FINALLY: debug('State: FINALLY');
+					break;
+				case State.LOADING: debug('State: LOADING');
+					break;
+				case State.SCENARIO_BODY: debug('State: SCENARIO_BODY');
+					break;
+				default: alert('Error state '+state);
+			}
 		},
 		runtimeError: runtimeError,
-		sentenceFailure: function(sent, arg){
-			debug('sentenceFailure called');
-			passed = false;
-			failedSents.push({
-				word: currentKeyword,
-				sent: sent,
-				arg: arg,
-				stack: Core.stringifyCallStack(INDENT)
-			});
-			debug('failed sentence remembered');
-			// fails of action steps are understood like errors and terminate scenario execution
-			// in block Finally any failed step terminates whole feature
-			if(currentKeyword != 'Then' || finallyExecuted) runtimeError(
-				'step error',
-				'Action step '.concat(quote(currentKeyword,' ',sent), ' failed')
-			);
-		},
 		setCurrentKeyword: function(word){
 			currentKeyword = word;
 		},
+		// @param {blockType} one of numeric constants, provided by Flow
+		setState: function(blockType){
+			// TEMPORARY check, write assert
+			if(blockType < 10){
+				alert('Error: Wrong block type '+blockType);
+				return;
+			}
+			state = blockType;
+			currentKeyword = undefined;
+			if( !skipFeature){
+				// without that reset step definitions won't be executed,
+				// because Core methods check Flow.valid()
+				blockError = false;
+			}
+			else debug('skip feature');
+		},
 		skipFeature: function(){
 			return skipFeature;
+		},
+		state: function(){
+			return state;
 		},
 		valid: function(){
 			return !blockError;

@@ -32,7 +32,7 @@ Finally:
 	When print
 		"Finally step should be called too"
  
-Scenario: syntax error after Given aborts Scenario without calling Finally
+Scenario: syntax error after Given prevents execution
 	Given step
 	" And syntax error
 	# "
@@ -42,7 +42,7 @@ Finally:
 	When print
 		"Finally step should be omitted"
  
-Scenario: syntax error after When finishes Scenario and calls Finally
+Scenario: syntax error after When prevents execution
 	Given step
 	# also check, that failed step will be remembered
 	Then failed step
@@ -53,9 +53,9 @@ Scenario: syntax error after When finishes Scenario and calls Finally
 		"Next step should be omitted"
 Finally: 
 	When print
-		"Finally step should be called"
+		"Finally step should be omitted"
  
-Scenario: syntax error after Then finishes Scenario and calls Finally
+Scenario: syntax error after Then prevents execution
 	Given step
 	Then step
 	"And syntax error
@@ -64,7 +64,7 @@ Scenario: syntax error after Then finishes Scenario and calls Finally
 		"Next step should be omitted"
 Finally:
 	When print
-		"Finally should be called"
+		"Finally should be omitted"
  
 # 2
 # Proper conclusion of block Finally

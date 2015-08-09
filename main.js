@@ -84,7 +84,7 @@ Object.prototype.content = function(preq){
 	var str = '';
 	if(!preq) preq='';
 	for(key in this){
-		if(this.hasOwnProperty(key)){
+		if(this.hasOwnProperty(key) && this[key] !== undefined){
 			str=str.concat('\n',preq,key,': ',this[key]);
 		}
 	};

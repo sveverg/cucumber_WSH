@@ -39,6 +39,12 @@ var Log = (function(){
 				if(props.length){
 					str = str.concat('\n',props);
 				}
+			// special case for errors in critical blocks
+			}else if(callStack[0].name != scenarioName){
+				str = str.concat(indent,'In ',callStack[0].name);
+				if(props.length){
+					str = str.concat('\n',props);
+				}
 			}else if(props.length){
 				str = str.concat(indent, 'In Scenario: ',scenarioName,'\n',props);
 			}
@@ -98,8 +104,10 @@ var Log = (function(){
 			}
 			msg = substituteValues(msg, dataObject).replace(/\n/,'\n'+INDENT);
 			alert(INDENT.concat("Raised ",errorName,': ',msg));
-			var callStack = stringifyCallStack(INDENT);
-			if(callStack.length) alert(callStack);
+			if(errorName != 'syntax error'){
+				var callStack = stringifyCallStack(INDENT);
+				if(callStack.length) alert(callStack);
+			}
 		},
 		addFail: function(word, sent, arg){
 			passed = false;
@@ -149,8 +157,7 @@ var Flow = (function(){
 	var blockError = false;
 
 	// Special mark, which prevents execution of any Scenario in file
-	// Right now triggered in case of syntax or runtime error in Finally block
-	// This mark prevents reset of blockError, so no more step definitions will be ever executed
+	// Right now triggered in case of runtime error in critical block
 	var skipFeature = false;
 
 	var debug = function(msg){
@@ -163,14 +170,18 @@ var Flow = (function(){
 	var runtimeError = function(errorName, msg, dataObject){
 		debug('Runtime error called');
 		blockError = true;
-		if(state == State.FINALLY){
+		if(state == State.CRITICAL_BLOCK){
 			skipFeature = true;
+			// TEMPORARY, see runOutline().cycleCallback() check
+			debug('Set state ABORTED');
+			debug('CRITICAL_BLOCK');
+			state = State.ABORTED;
 		}else if(!currentKeyword || currentKeyword == 'Given'){
 			debug('Set state ABORTED');
 			debug('currentKeyword '+currentKeyword);
 			state = State.ABORTED;
 		}
-		Log.addError(errorName, msg, dataObject, state == State.FINALLY);
+		Log.addError(errorName, msg, dataObject, state == State.CRITICAL_BLOCK);
 	}
 
 	return {
@@ -179,13 +190,14 @@ var Flow = (function(){
 			return !skipFeature;
 		},
 		allowsExamples: function(tags){
-			return true;
+			// TEMPORARY
+			return !skipFeature;
 		},
 		printState: function(){
 			switch(state){
 				case State.ABORTED: debug('State: ABORTED');
 					break;
-				case State.FINALLY: debug('State: FINALLY');
+				case State.CRITICAL_BLOCK: debug('State: CRITICAL_BLOCK');
 					break;
 				case State.LOADING: debug('State: LOADING');
 					break;
@@ -207,12 +219,12 @@ var Flow = (function(){
 			}
 			state = blockType;
 			currentKeyword = undefined;
-			if( !skipFeature){
-				// without that reset step definitions won't be executed,
-				// because Core methods check Flow.valid()
+			// if( !skipFeature){
+			// 	// without that reset step definitions won't be executed,
+			// 	// because Core methods check Flow.valid()
 				blockError = false;
-			}
-			else debug('skip feature');
+			// }
+			// else debug('skip feature');
 		},
 		skipFeature: function(){
 			return skipFeature;

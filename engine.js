@@ -1,8 +1,9 @@
 var State = {
 	// Terminates scenario without calling Finally
 	ABORTED: 10,
-	// Executing Finally(also records steps to procedures[FINALLY])
-	FINALLY: 11, 
+	// Executing service block, in which any Then failure considered to be runtime error
+	// Ex: Afterward, Background, Finally 
+	CRITICAL_BLOCK: 11, 
 	// Loading procedure, outline body, finally, background...
 	// whatever loadedProcedure points at.
 	LOADING: 12,
@@ -28,7 +29,8 @@ var CARANTINE = 1;
 // It can be pointed by loadedProcedure in appendToLoading()
 // or accessed directly in run()
 var FINALLY = 2;
-
+var BACKGROUND = 3;
+var AFTERWARD = 4;
 
 var Core = (function(){
 	/* Lists, containing step definition objects
@@ -135,10 +137,10 @@ var Core = (function(){
 			// fails of action steps are understood like errors and terminate scenario execution
 			if(keyword != 'Then') Flow.runtimeError(
 				'step error',
-				'Action step '.concat(quote(keyword,' ',sent), ' in Finally block failed')
+				'Action step '.concat(quote(keyword,' ',sent), ' failed')
 			);
-			// in block Finally any failed step execution
-			else if(Flow.state() == State.FINALLY) Flow.runtimeError(
+			// in critical block any failed step considered to be error
+			else if(Flow.state() == State.CRITICAL_BLOCK) Flow.runtimeError(
 				'step error',
 				'Check '.concat(quote(keyword,' ',sent), ' in Finally block failed')
 			);
@@ -165,7 +167,7 @@ var Core = (function(){
 				}
 				debug(variables.content());
 				debug('procedure length '+procedure.steps.length);
-				runSteps(procedure.steps);
+				runSteps(procedure);
 			}else{
 				//TEMPORARY to avoid printing failed procedure in callStack with old variables
 				var called = callStack.pop();
@@ -183,8 +185,9 @@ var Core = (function(){
 		}
 	}
 
-	function runSteps(steps, defaultArg){
-		steps.every((defaultArg) ? function(command){
+	function runSteps(procedure, defaultArg){
+		callStack.last().name = procedure.name;
+		procedure.steps.every((defaultArg) ? function(command){
 			// default argument can be replaced by steps' personal arguments
 			var arg = (command.arg) ? command.arg : defaultArg;
 			Core.execute(command.word, command.step, arg);
@@ -239,12 +242,12 @@ var Core = (function(){
 					var argType = verifyArgument(procedure, arg);
 					if(Flow.valid()){
 						switch(argType){
-							case ABSENT: runSteps(procedure.steps); 
+							case ABSENT: runSteps(procedure); 
 								break;
 							case STRING: variables[procedure.params[0]] = arg;
-								runSteps(procedure.steps);
+								runSteps(procedure);
 								break;
-							case DOC_STRING: runSteps(procedure.steps, arg);
+							case DOC_STRING: runSteps(procedure, arg);
 								break;
 							case DATA_TABLE: runCycledProcedure(procedure, arg);
 						}
@@ -268,40 +271,69 @@ var Core = (function(){
 				alert("Engine: Wrong definition kind +'"+word+"'");
 			}
 		},
+		// TEMPORARY until refactored
+		runAfterward: function(){
+			if(procedures[AFTERWARD]){
+				Flow.setState(State.CRITICAL_BLOCK);
+				runSteps(procedures[AFTERWARD]);
+			}
+		},
 		// @param {hasFinally} whether executed scenario has block Finally
 		runScenario: function(hasFinally){
-			// space for Background
-			Flow.setState(State.SCENARIO_BODY);
-			runSteps(procedures[SCENARIO].steps);
-			if(hasFinally && Flow.state() != State.ABORTED){
-				Flow.setState(State.FINALLY);
-				runSteps(procedures[FINALLY].steps);
+			// if scenario execution is allowed by Flow
+			if(Flow.state() != State.ABORTED){
+				if(procedures[BACKGROUND]){
+					Flow.setState(State.CRITICAL_BLOCK);
+					runSteps(procedures[BACKGROUND]);
+				}
+				//no errors in Background
+				if(Flow.valid()){
+					// space for Background
+					Flow.setState(State.SCENARIO_BODY);
+					runSteps(procedures[SCENARIO]);
+					if(hasFinally && Flow.state() != State.ABORTED){
+						Flow.setState(State.CRITICAL_BLOCK);
+						runSteps(procedures[FINALLY]);
+					}
+				}
+				//if Background was called, Afterward is called in any case
+				if(procedures[AFTERWARD]){
+					Flow.setState(State.CRITICAL_BLOCK);
+					runSteps(procedures[AFTERWARD]);
+				}
 			}
-			// space for Afterwards 
+			else debug('Scenario skipped');
 		},
 		runOutline: function(examples, hasFinally){
 			// used to call finally after each examples row
 			// and avoid outline interruption after first error occurred
 			var cycleCallback = function(){
 				if(hasFinally && Flow.state() != State.ABORTED){
-					debug('run final');
-					Flow.setState(State.FINALLY);
-					runSteps(procedures[FINALLY].steps);
+					debug('run outline final');
+					Flow.setState(State.CRITICAL_BLOCK);
+					runSteps(procedures[FINALLY]);
 				}
-				// block errors reset
-				Flow.setState(State.SCENARIO_BODY);
+				// TEMPORARY crutch
+				if( !Flow.skipFeature()){
+					// block errors reset
+					Flow.setState(State.SCENARIO_BODY);
+				}
 			}
 			// first execution
 			if(Flow.state() == State.LOADING){
-				//space for Background
+				if(procedures[BACKGROUND]){
+					Flow.setState(State.CRITICAL_BLOCK);
+					runSteps(procedures[BACKGROUND]);
+				}
 			}
-			// if scenario execution is permitted by Flow
+			// if execution of examples is permitted by Flow
 			if(Flow.state() != State.ABORTED){
 				// TODO local methods should not change Flow state(!)
 				Flow.setState(State.SCENARIO_BODY);
 				// function is executed after every row of examples
 				runCycledProcedure(procedures[SCENARIO], examples, cycleCallback);
 			}
+			// Afterward is called in finishLoad()
 		}
 	};
 })();
@@ -332,11 +364,28 @@ var Engine = (function(){
 	}
 
 	return {
+		addAfterward: function(){
+			if(!loadedProcedure || loadedProcedure == procedures[BACKGROUND]){
+				procedures[AFTERWARD] = {name: 'Afterward block', steps: []};
+				loadedProcedure = procedures[AFTERWARD];
+				Flow.setState(State.LOADING);
+			}
+			else loadError('Block Afterward can be preceded only by Background block');
+			// TODO add to CARANTINE
+		},
+		addBackground: function(){
+			if(!loadedProcedure){
+				procedures[BACKGROUND] = {name: 'Background block', steps: []};
+				loadedProcedure = procedures[BACKGROUND];
+				Flow.setState(State.LOADING);
+			}
+			else loadError('No block can precede block Background');
+		},
 		addFinallyBlock: function(){
 			// Flow.printState();
-			if(loadedProcedure == procedures[SCENARIO]){
+			if(loadedProcedure == procedures[SCENARIO] || loadedProcedure == procedures[CARANTINE]){
 				procedures[FINALLY] = {
-					name: quote(loadedProcedure.name) + "'s Finally",
+					name: 'Finally block',
 					steps: []
 				};
 				loadedProcedure = procedures[FINALLY];
@@ -374,15 +423,18 @@ var Engine = (function(){
 			if(isNotProcedure(loadedProcedure)){
 				// if scenario was no times executed, but also wasn't aborted 
 				if(Flow.state() == State.LOADING){
+					debug('Run last scenario');
 					// suggest, it's not scenario outline, and execute it
 					// argument hasFinally
 					Core.runScenario(loadedProcedure == procedures[FINALLY]);
-				}else{
+				}else if(Flow.state() != State.ABORTED){
 					// suggest, it's scenario outline
 					// execute Afterwards by Core
+					Core.runAfterward();
 				}
 				Log.printReport();
 			}
+			else debug('Doing nothing');
 		},
 		// TODO defense against numeric procedure names
 		newProcedure: function(name, params){
@@ -404,6 +456,8 @@ var Engine = (function(){
 				loadedProcedure = procedures[SCENARIO];
 			}else{
 				Flow.setState(State.ABORTED);
+				procedures[CARANTINE] = {name: name, steps: []};
+				loadedProcedure = procedures[CARANTINE];
 				debug('Scenario '+quote(name)+'is omitted');
 			} 
 		},

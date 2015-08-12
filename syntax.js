@@ -9,19 +9,13 @@ var GherkinLine = (function(){
 		this.val = line;
 	}; 
 	// This construction is used to describe sequence of mutually exclusive blocks.
-	// Passed block interrupts any attempts to execute blocks down the sequence
+	// Passed block interrupts any attempt to execute blocks down the sequence
 	//      by returning Idle object with empty methods.
 	// Block fails, when its condition fails or handler returns true.
 	//      In that case next blocks will be attempted to execute.
 	// If condition fails, block handler will never be called.
 	GherkinLine.prototype.chain = function(condition, handler){
 		return (condition && !(handler && handler.call(this)) ) ? Idle : this;
-	};
-	GherkinLine.prototype.empty = function(handler){
-		return this.chain(this.val.length == 0, handler);
-	};
-	GherkinLine.prototype.exec = function(func){
-		return (func.call(this)) ? Idle : this;
 	};
 	GherkinLine.prototype.other = function(handler){
 		handler.call(this);
@@ -65,6 +59,8 @@ var GherkinLine = (function(){
 
 
 var DOC_STRING_MARK      = '"""';
+var BACKGROUND_ANNOTATION= 'Background:';
+var AFTERWARD_ANNOTATIONS= ['Epilog:','Epilogue:','Afterward:','Afterwards:','Afterword:'];
 var EXAMPLES_ANNOTATION  = 'Examples:';
 var FEATURE_ANNOTATION   = 'Feature:';
 var FINALLY_ANNOTATION   = 'Finally:';
@@ -93,9 +89,6 @@ var Buffer = (function(){
 	var previousKeyword;
 	// Contains previous loaded step, immediately cleared after its execution
 	var stepBuffer;
-	// Action to perform with new step: Engine.run || Engine.appendToLoading
-	// Managed by Buffer.newBlock()
-	// var engineAction;
 
 	// If buffer contains any step, engineAction's preformed on it. 
 	// These actions are performed together, otherwise not cleaning buffer mistakenly 
@@ -174,11 +167,17 @@ var Buffer = (function(){
 				Engine.finishLoad();
 				return true; // continue chain execution
 			})
-			.startsWith(SCENARIO_HEADINGS, function(){
-				Engine.newScenario(name, arg);
+			.startsWith(AFTERWARD_ANNOTATIONS, function(){
+				Engine.addAfterward();
+			})
+			.startsWith(BACKGROUND_ANNOTATION, function(){
+				Engine.addBackground();
 			})
 			.startsWith(PROCEDURE_ANNOTATION, function(){
 				Engine.newProcedure(name, arg);
+			})
+			.startsWith(SCENARIO_HEADINGS, function(){
+				Engine.newScenario(name, arg);
 			})
 			.other(function(word){
 				Engine.catchSyntaxError("Wrong block kind "+word);
@@ -374,7 +373,7 @@ var Syntax = (function(){
 			// }) != new GherkinLine(34).PASSED, "startsWith doesn't work properly");
 
 			var line = trim(nextLine);
-			new GherkinLine(line).empty().startsWith('#')/*comment*/
+			new GherkinLine(line).chain(line.length == 0).startsWith('#')/*comment*/
 			.chain(state != STANDARD && state != READING_DESCRIPTION, handleSpecialStates)
 			//
 			.startsWith(DOC_STRING_MARK, function(){
@@ -412,7 +411,7 @@ var Syntax = (function(){
 			.startsWith(FEATURE_ANNOTATION, function(){
 				state = READING_DESCRIPTION;
 			})
-			.startsWith(FINALLY_ANNOTATION, function(){
+			.startsWith(AFTERWARD_ANNOTATIONS,BACKGROUND_ANNOTATION,FINALLY_ANNOTATION, function(){
 				state = READING_DESCRIPTION;
 				Buffer.newBlock(this);
 			})

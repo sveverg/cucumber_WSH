@@ -1,5 +1,7 @@
 Scenario "failed step in Finally stops feature execution" begins
-    Raised fatal step error: Action step "When failed step" in Finally block failed
+    Raised step error: Action step "When failed step" failed
+    In Finally block
 Scenario failed
     Failed "When failed step"
+    In Finally block
 

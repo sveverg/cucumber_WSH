@@ -1,0 +1,22 @@
+Scenario "test1" begins
+        Message: "Background called"
+        Message: "Body called"
+    Raised step error: Action step "When failed step" failed
+        Message: "Finally called"
+        Message: "Afterward called"
+Scenario failed
+    Failed "When failed step"
+
+Scenario "test2" begins
+        Message: "Background called"
+        Message: "Body called"
+    Raised step error: Action step "When failed step" failed
+        Message: "Finally called"
+    Raised step error: Action step "When failed step" failed
+    In Finally block
+        Message: "Afterward called"
+Scenario failed
+    Failed "When failed step"
+    Failed "When failed step"
+    In Finally block
+

@@ -3,12 +3,12 @@ Scenario "print something" begins
 Scenario passed
 
 Scenario "failed Given aborts Scenario without calling Finally" begins
-    Raised step error: Action step "Given failed step" in Finally block failed
+    Raised step error: Action step "Given failed step" failed
 Scenario failed
     Failed "Given failed step"
 
 Scenario "failed When finishes Scenario and calls Finally" begins
-    Raised step error: Action step "When failed step" in Finally block failed
+    Raised step error: Action step "When failed step" failed
         Message: "Finally step should be called"
 Scenario failed
     Failed "When failed step"
@@ -39,13 +39,13 @@ Scenario failed
 Scenario "Finally error stops outline cycle" begins
         Message: "Cycle passed"
         Message: "Finally passed"
-    Raised fatal step error: Check "Then failed step" in Finally block failed
-    In Scenario: Finally error stops outline cycle
+    Raised step error: Check "Then failed step" in Finally block failed
+    In Finally block
         number: 1
         word: one
 Scenario failed
     Failed "Then failed step"
-    In Scenario: Finally error stops outline cycle
+    In Finally block
         number: 1
         word: one
 

@@ -24,3 +24,5 @@ Examples:
 | 3     | 8      | 11  |
 | 2     | 6      | 8   |
 | 5     | 5      | 10  |
+
+#failure in Given interrupts Finally, but doesn't interrupt next cycle 

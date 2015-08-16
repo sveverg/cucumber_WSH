@@ -49,3 +49,18 @@ Scenario failed
         number: 1
         word: one
 
+Feature "counted fails" executed.
+
+Scenario "Given error prevents Finally execution, but not whole cycle" begins
+        Message: "Cycle passed"
+        Message: "Finally passed"
+    Raised step error: Action step "Given counted fail" failed
+    In Scenario: Given error prevents Finally execution, but not whole cycle
+        arg1: 3
+        arg2: 8
+Scenario failed
+    Failed "Given counted fail"
+    In Scenario: Given error prevents Finally execution, but not whole cycle
+        arg1: 3
+        arg2: 8
+

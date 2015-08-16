@@ -3,22 +3,21 @@ var Engine = (function(){
 	var CRITICAL = true;
 	var ENGINE_DEBUG = true;
 
+	// Storage for loaded Scenarios, Procedures and special blocks
 	var blocks = [];
+	var loadedBlock;
 
+	// No difference between simple story and outline
 	var SCENARIO = 0;
-	// If procedure can't be loaded to blocks[name], ex. name is duplicated
-	// then it's loaded to blocks[CARANTINE]
-	// to avoid long list of errors "Engine: sentence 'step' is loaded to an undefined procedure"
-	// It exists for some time, but can't be called
+	// If block can't be loaded to blocks[name], ex. name is duplicated
+	// then it's loaded to blocks[CARANTINE] to decrease error number
+	// and make them more meaningful.
+	// There it exists for some time, but can't be executed.
 	var CARANTINE = 1;
-	// This cell is used to store Finally blocks
-	// It can be pointed by loadedBlock in appendToLoading()
-	// or accessed directly in run()
+	// Used to store namesake blocks
 	var FINALLY = 2;
 	var BACKGROUND = 3;
 	var AFTERWARD = 4;
-
-	var loadedBlock;
 
 	var State = {
 		EXECUTE_ALL: 10,
@@ -127,15 +126,21 @@ var Engine = (function(){
 		else debug('Scenario skipped');
 	}
 
+	var setLoadedBlock = function(blockKey, name){
+		blocks[blockKey] = {name: name, steps: []};
+		loadedBlock = blocks[blockKey];
+	}
+
 	return {
 		addAfterward: function(){
 			if(!loadedBlock || loadedBlock == blocks[BACKGROUND]){
-				blocks[AFTERWARD] = {name: 'Afterward block', steps: []};
-				loadedBlock = blocks[AFTERWARD];
+				setLoadedBlock(AFTERWARD, 'Afterward block');
 				state = State.LOAD_BLOCK;
-			}
-			else loadError('Block Afterward can be preceded only by Background block');
-			// TODO add to CARANTINE
+			}else{
+				loadError('Block Afterward can be preceded only by Background block');
+				setLoadedBlock(CARANTINE, 'Afterward block');
+				state = State.SKIP_BLOCK; //don't remember
+			} 
 		},
 		addBackground: function(){
 			if(!loadedBlock){
@@ -152,11 +157,13 @@ var Engine = (function(){
 					steps: []
 				};
 				loadedBlock = blocks[FINALLY];
+			}else{
+				state = State.SKIP_BLOCK; // avoid recording steps
+				if(loadedBlock == blocks[FINALLY]){
+				     loadError("Second block Finally is not allowed", loadedBlock);
+				}
+				else loadError("Block Finally after procedure is not allowed", loadedBlock);
 			}
-			else if(loadedBlock == blocks[FINALLY]){
-			     loadError("Second block Finally is not allowed", loadedBlock);
-			}
-			else loadError("Block Finally after procedure is not allowed", loadedBlock);
 		},
 		// appends step to loading procedure or scenario outline
 		appendToLoading: function(word, step, arg){
@@ -195,6 +202,15 @@ var Engine = (function(){
 		getProcedure: function(name){
 			//TODO defense against numeric steps 
 			return blocks[name];
+		},
+		newFeature: function(name){
+			// reset SKIP_FEATURE
+			state = State.LOAD_BLOCK;
+			// special blocks reset
+			blocks[AFTERWARD] = undefined;
+			blocks[BACKGROUND] = undefined;
+			loadedBlock = undefined;
+			Log.recordFeature(name);
 		},
 		// TODO defense against numeric procedure names
 		newProcedure: function(name, params){

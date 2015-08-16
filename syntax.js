@@ -173,6 +173,9 @@ var Buffer = (function(){
 			.startsWith(BACKGROUND_ANNOTATION, function(){
 				Engine.addBackground();
 			})
+			.startsWith(FEATURE_ANNOTATION, function(){
+				Engine.newFeature(trim(gLine.lastPart));
+			})
 			.startsWith(PROCEDURE_ANNOTATION, function(){
 				Engine.newProcedure(name, arg);
 			})
@@ -408,16 +411,14 @@ var Syntax = (function(){
 			.startsWith(EXAMPLES_ANNOTATION, function(){
 				state = READING_EXAMPLES;
 			})
-			.startsWith(FEATURE_ANNOTATION, function(){
-				state = READING_DESCRIPTION;
-			})
-			.startsWith(AFTERWARD_ANNOTATIONS,BACKGROUND_ANNOTATION,FINALLY_ANNOTATION, function(){
+			.startsWith(FEATURE_ANNOTATION, AFTERWARD_ANNOTATIONS,BACKGROUND_ANNOTATION,FINALLY_ANNOTATION, function(){
 				state = READING_DESCRIPTION;
 				Buffer.newBlock(this);
 			})
 			.startsWith(PROCEDURE_ANNOTATION, procedureHandler)
 			.startsWith(SCENARIO_HEADINGS, function(){
 				// debug('Starts with Scenario headings');
+				state = READING_DESCRIPTION;
 				var tags = (tagBuffer.length) ? tagBuffer : undefined;
 				expectVariables = (this.firstPart == OUTLINE_ANNOTATION);
 				Buffer.newBlock(this, trim(this.lastPart), tags);

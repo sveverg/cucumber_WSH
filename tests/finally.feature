@@ -91,9 +91,25 @@ Examples: conventional table
 	| number | word   |
 	| 1      | one    |
 	| 11     | eleven |
-
+ 
 GivenProcedure: procedure step
 	When step
 	Then failed step
-
+ 
 # Scenario: failed Then statement in When-called procedure finishes Scenario and calls Finally
+ 
+Feature: counted fails
+	Background:
+		When set fail number to 1
+ 
+	Scenario Outline: Given error prevents Finally execution, but not whole cycle
+		Given counted fail
+		When print
+			"Cycle passed"
+	Finally:
+		When print
+			"Finally passed"
+	Examples:
+	| arg1 | arg2 |
+	| 5    |    7 |
+	| 3    |    8 |

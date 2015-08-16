@@ -1,3 +1,5 @@
+Feature "#1" executed.
+
 Scenario "test1" begins
         Message: "Background called"
         Message: "Body called"
@@ -19,4 +21,40 @@ Scenario failed
     Failed "When failed step"
     Failed "When failed step"
     In Finally block
+
+Feature "#2" executed.
+
+Scenario "Feature interruption was reset" begins
+        Message: "Second Background called"
+        Message: "Body called"
+        Message: "Finally called"
+Scenario passed
+
+Load error: Block Afterward can be preceded only by Background block
+
+Scenario "Afterward should not be called" begins
+        Message: "Second Background called"
+        Message: "Body called"
+        Message: "Finally called"
+Scenario passed
+
+Feature "behaviour in case of Background error" executed.
+
+Scenario "test 1" begins
+        Message: "Background called"
+    Raised fatal step error: Action step "When failed step" failed
+    In Background block
+        Message: "Afterward called"
+Scenario failed
+    Failed "When failed step"
+    In Background block
+
+Feature "Afterward-Finally madness" executed.
+
+Load error: Block Finally after procedure is not allowed
+Happened in procedure "Afterward block"
+
+Scenario "test" begins
+        Message: "Afterward called"
+Scenario passed
 

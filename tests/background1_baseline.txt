@@ -12,7 +12,7 @@ Scenario "test2" begins
         Message: "Body called"
     Raised step error: Action step "When failed step" failed
         Message: "Finally called"
-    Raised step error: Action step "When failed step" failed
+    Raised fatal step error: Action step "When failed step" failed
     In Finally block
         Message: "Afterward called"
 Scenario failed

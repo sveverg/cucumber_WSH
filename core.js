@@ -221,9 +221,16 @@ var Core = (function(){
 				return blockValid;
 			});
 		},
+		/*
+		* Executes block with arguments from every table row.
+		* Execution is interrupted, if iteration completes with error
+		* If callback is passed to function, it is called after each iteration
+		* and redefines iteration result. 
+		* Critical flag is passed to every runBlock call, so callback can temporary
+		* change isBlockCritical value.  
+		*/
 		// TODO behavior of finalBlock should be changeable
 		// TODO test Given fail in the middle.
-		// isBlockCritical isn't changed in function body
 		runCycle: function(block, table, critical, callback){
 			debug('runCycle');
 			// names of table columns can be redefined using keyword 'With'

@@ -30,7 +30,7 @@ var Log = (function(){
 	var stringifyCallStack = function(indent){
 		var callStack = Core.callStack();
 		var str = '', props;
-		debug('CSL'+callStack.length);
+		// debug('CSL'+callStack.length);
 		//zero element is headElement, it's not printed
 		for (var i = callStack.length - 1; i >= 0; i--) {
 			props = callStack[i].vars.content(indent+'    ');
@@ -102,8 +102,12 @@ var Log = (function(){
 			if(fatal){
 				errorName = 'fatal '+errorName;
 			}
-			msg = substituteValues(msg, dataObject).replace(/\n/,'\n'+INDENT);
-			alert(INDENT.concat("Raised ",errorName,': ',msg));
+			if(msg){
+				msg = substituteValues(msg, dataObject).replace(/\n/,'\n'+INDENT);
+				alert(INDENT.concat("Raised ",errorName,': ',msg));
+			}else{
+				alert(INDENT.concat("Raised ",errorName));
+			}
 			if(errorName != 'syntax error'){
 				var callStack = stringifyCallStack(INDENT);
 				if(callStack.length) alert(callStack);
@@ -145,95 +149,95 @@ var Log = (function(){
 /* Controls execution of blocks Finally, Background and Ending.
 *  Accepts notifications about step failures and errors.
 *  Stores and prints information about executed scenario.*/
-var Flow = (function(){
-	// keyword of currently executed step
-	// required to define engine behavior in case of error || step failure
-	// see Flow.isAborted()
-	var currentKeyword;
+// var Flow = (function(){
+// 	// keyword of currently executed step
+// 	// required to define engine behavior in case of error || step failure
+// 	// see Flow.isAborted()
+// 	var currentKeyword;
 
-	var state;
+// 	var state;
 
-	// has error happened in current block: Finally, Outline iteration etc.
-	var blockError = false;
+// 	// has error happened in current block: Finally, Outline iteration etc.
+// 	var blockError = false;
 
-	// Special mark, which prevents execution of any Scenario in file
-	// Right now triggered in case of runtime error in critical block
-	var skipFeature = false;
+// 	// Special mark, which prevents execution of any Scenario in file
+// 	// Right now triggered in case of runtime error in critical block
+// 	var skipFeature = false;
 
-	var debug = function(msg){
-		if(App.debug) alert('Flow: '+msg);
-	}
+// 	var debug = function(msg){
+// 		if(App.debug) alert('Flow: '+msg);
+// 	}
 
-	// Handles all the errors, which happened while Scenario was read || any steps executed 
-	// Common: nothing marked invalid
-	//TODO check procedure errors handling and sth like that(without Given, but need abort)
-	var runtimeError = function(errorName, msg, dataObject){
-		debug('Runtime error called');
-		blockError = true;
-		if(state == State.CRITICAL_BLOCK){
-			skipFeature = true;
-			// TEMPORARY, see runOutline().cycleCallback() check
-			debug('Set state ABORTED');
-			debug('CRITICAL_BLOCK');
-			state = State.ABORTED;
-		}else if(!currentKeyword || currentKeyword == 'Given'){
-			debug('Set state ABORTED');
-			debug('currentKeyword '+currentKeyword);
-			state = State.ABORTED;
-		}
-		Log.addError(errorName, msg, dataObject, state == State.CRITICAL_BLOCK);
-	}
+// 	// Handles all the errors, which happened while Scenario was read || any steps executed 
+// 	// Common: nothing marked invalid
+// 	//TODO check procedure errors handling and sth like that(without Given, but need abort)
+// 	var runtimeError = function(errorName, msg, dataObject){
+// 		debug('Runtime error called');
+// 		blockError = true;
+// 		if(state == State.CRITICAL_BLOCK){
+// 			skipFeature = true;
+// 			// TEMPORARY, see runOutline().cycleCallback() check
+// 			debug('Set state ABORTED');
+// 			debug('CRITICAL_BLOCK');
+// 			state = State.ABORTED;
+// 		}else if(!currentKeyword || currentKeyword == 'Given'){
+// 			debug('Set state ABORTED');
+// 			debug('currentKeyword '+currentKeyword);
+// 			state = State.ABORTED;
+// 		}
+// 		Log.addError(errorName, msg, dataObject, state == State.CRITICAL_BLOCK);
+// 	}
 
-	return {
-		allowsScenario: function(name, tags){
-			// TEMPORARY
-			return !skipFeature;
-		},
-		allowsExamples: function(tags){
-			// TEMPORARY
-			return !skipFeature;
-		},
-		printState: function(){
-			switch(state){
-				case State.ABORTED: debug('State: ABORTED');
-					break;
-				case State.CRITICAL_BLOCK: debug('State: CRITICAL_BLOCK');
-					break;
-				case State.LOADING: debug('State: LOADING');
-					break;
-				case State.SCENARIO_BODY: debug('State: SCENARIO_BODY');
-					break;
-				default: alert('Error state '+state);
-			}
-		},
-		runtimeError: runtimeError,
-		setCurrentKeyword: function(word){
-			currentKeyword = word;
-		},
-		// @param {blockType} one of numeric constants, provided by Flow
-		setState: function(blockType){
-			// TEMPORARY check, write assert
-			if(blockType < 10){
-				alert('Error: Wrong block type '+blockType);
-				return;
-			}
-			state = blockType;
-			currentKeyword = undefined;
-			// if( !skipFeature){
-			// 	// without that reset step definitions won't be executed,
-			// 	// because Core methods check Flow.valid()
-				blockError = false;
-			// }
-			// else debug('skip feature');
-		},
-		skipFeature: function(){
-			return skipFeature;
-		},
-		state: function(){
-			return state;
-		},
-		valid: function(){
-			return !blockError;
-		}
-	}
-})();
+// 	return {
+// 		allowsScenario: function(name, tags){
+// 			// TEMPORARY
+// 			return !skipFeature;
+// 		},
+// 		allowsExamples: function(tags){
+// 			// TEMPORARY
+// 			return !skipFeature;
+// 		},
+// 		printState: function(){
+// 			switch(state){
+// 				case State.ABORTED: debug('State: ABORTED');
+// 					break;
+// 				case State.CRITICAL_BLOCK: debug('State: CRITICAL_BLOCK');
+// 					break;
+// 				case State.LOADING: debug('State: LOADING');
+// 					break;
+// 				case State.SCENARIO_BODY: debug('State: SCENARIO_BODY');
+// 					break;
+// 				default: alert('Error state '+state);
+// 			}
+// 		},
+// 		runtimeError: runtimeError,
+// 		setCurrentKeyword: function(word){
+// 			currentKeyword = word;
+// 		},
+// 		// @param {blockType} one of numeric constants, provided by Flow
+// 		setState: function(blockType){
+// 			// TEMPORARY check, write assert
+// 			if(blockType < 10){
+// 				alert('Error: Wrong block type '+blockType);
+// 				return;
+// 			}
+// 			state = blockType;
+// 			currentKeyword = undefined;
+// 			// if( !skipFeature){
+// 			// 	// without that reset step definitions won't be executed,
+// 			// 	// because Core methods check Flow.valid()
+// 				blockError = false;
+// 			// }
+// 			// else debug('skip feature');
+// 		},
+// 		skipFeature: function(){
+// 			return skipFeature;
+// 		},
+// 		state: function(){
+// 			return state;
+// 		},
+// 		valid: function(){
+// 			return !blockError;
+// 		}
+// 	}
+// })();

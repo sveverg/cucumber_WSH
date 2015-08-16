@@ -139,6 +139,11 @@ var App = (function(){
 		eval(str);
 		stream.Close();
 
+		var stream = FSO.OpenTextFile('core.js',ForReading);
+		var str = stream.ReadAll();
+		eval(str);
+		stream.Close();
+
 		var stream = FSO.OpenTextFile('engine.js',ForReading);
 		var str = stream.ReadAll();
 		eval(str);

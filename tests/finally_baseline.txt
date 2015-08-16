@@ -39,7 +39,7 @@ Scenario failed
 Scenario "Finally error stops outline cycle" begins
         Message: "Cycle passed"
         Message: "Finally passed"
-    Raised step error: Check "Then failed step" in Finally block failed
+    Raised fatal step error: Check "Then failed step" in Finally block failed
     In Finally block
         number: 1
         word: one

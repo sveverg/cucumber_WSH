@@ -1,0 +1,15 @@
+Load error: File should start with feature
+
+Feature "runtime tests" executed.
+
+Scenario "undefined step" begins
+    Raised sentence error: Sentence "undefined step" doesn't fit any step definition from group "When"
+Scenario failed
+
+Load error: there is another procedure with name print_A
+Happened in procedure "duplicated print_A"
+
+Scenario "print 'A'" begins
+        Message: "A"
+Scenario passed
+

@@ -1,7 +1,0 @@
-Scenario "failed condition in Finally stops feature execution" begins
-    Raised fatal step error: Check "Then failed step" in Finally block failed
-    In Finally block
-Scenario failed
-    Failed "Then failed step"
-    In Finally block
-

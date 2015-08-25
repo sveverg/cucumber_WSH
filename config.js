@@ -8,5 +8,9 @@
 	// path to features
 	features: ["features\\*\\*.feature"],
 	// loaded scripts, listed in order of loading
-	scripts: ["globalDefs\\steps.js","features\\support\\env.js"]
+	scripts: ["globalDefs\\steps.js","features\\support\\env.js"],
+
+	//special settings
+	// breaks DocString, if scenario, procedure or feature declaration was met
+	interrupt_doc_string_on_block_annotation: true
 }

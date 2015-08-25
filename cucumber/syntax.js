@@ -69,6 +69,7 @@ var PROCEDURE_ANNOTATION = 'GivenProcedure:';
 var SCENARIO_ANNOTATION  = 'Scenario:';
 
 var SCENARIO_HEADINGS  = [SCENARIO_ANNOTATION, OUTLINE_ANNOTATION];
+var MAIN_BLOCK_HEADINGS = [FEATURE_ANNOTATION, FINALLY_ANNOTATION, PROCEDURE_ANNOTATION, SCENARIO_HEADINGS].flatten_one();
 var STEP_KEYWORDS = ['Given','When','Then','And','But'];
 
 /* 
@@ -206,13 +207,15 @@ var Postponer = (function(){
 		Postponer.triggered = true;
 		cyclic = _cyclic;
 		func = _func;
-		// transform to array
+		// transform arguments to array
 		lexemes = Array.prototype.map.call(_lexemes, function(x){return x;});
 		active = _active;
 	}
 
 	return{
 		// This method context is GherkinLine
+		// operation order is designed to give postponed action unchanged value of
+		// Postpone.triggered and capability to set it false 
 		act: function(){
 			var res;
 			if((this.startsWith.apply(this, lexemes) != this.PASSED) == active){
@@ -247,9 +250,6 @@ var Postponer = (function(){
 })();
 
 var Syntax = (function(){
-	// will be in configuration file
-	var INTERRUPT_DOC_STRING_ON_SCENARIO = true;
-
 	// array to store DocStrings and DataTables
 	var argBuffer = [];
 	// whether program checks existence of <variables> in the line
@@ -259,31 +259,24 @@ var Syntax = (function(){
 	// array to store tags
 	var tagBuffer = [];
 
-	var docStringMarkHandler = (function(){
-		var readDocStringLine = function(){
-			if(this.startsWith(SCENARIO_HEADINGS, PROCEDURE_ANNOTATION) == this.PASSED
-			&& INTERRUPT_DOC_STRING_ON_SCENARIO){
+	var docStringMarkHandler = function(){
+		if(Postponer.triggered){
+			Buffer.addArgument(argBuffer);
+			argBuffer = [];
+		}
+		else Postponer.doUntil(DOC_STRING_MARK, function(){
+			if(this.startsWith(MAIN_BLOCK_HEADINGS) == this.PASSED
+			&& App.getConfigValue('interrupt_doc_string_on_block_annotation')){
 				// breaking cycle
+				Postponer.triggered = false;
 				Buffer.sendError("DocString includes keyword "+quote(this.firstPart)+
 					'\nSymbol """ is very likely to be mistakenly omitted.');
-				readingDocString = false;
-				Postponer.triggered = false;
 			}else{
 				argBuffer.push(this.val);
 				return false; // interrupt chain
 			}
-		}
-		var readingDocString = false;
-		return function(){
-			if(readingDocString){
-				Buffer.addArgument(argBuffer);
-				argBuffer = [];
-			}
-			else Postponer.doUntil(DOC_STRING_MARK, readDocStringLine);
-			readingDocString = !readingDocString;
-		}
-	})();
-
+		});
+	}
 	var procedureHandler = function(){
 		skipDescription = true;
 		checkVariables = true;
@@ -298,7 +291,6 @@ var Syntax = (function(){
 			Buffer.newBlock(this, last);
 		}
 	};
-
 	var stepHandler = function(){
 		skipDescription = false;
 

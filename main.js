@@ -1,3 +1,4 @@
+var VOID_OBJECT = {};
 var assert = function(cond,msg){
 	if(!cond){
 		if(msg != undefined){
@@ -59,7 +60,7 @@ Array.prototype.filter = function(func){
 //underscore flatten with shallow = 1
 Array.prototype.flatten_one = function(){
 	return Array.prototype.concat.apply([], this);
-}
+} 
 Array.prototype.foreach = function(func){
 	for (var i = 0; i < this.length; i++) {
 		func(this[i]);
@@ -179,8 +180,6 @@ var FileUtils = (function(){
 
 var App = (function(){
 	var CONFIG_PATH = 'config.js';
-
-	var VOID_OBJECT = {};
 	
 	//internal dependency storage
 	var Namespace = {};
@@ -229,6 +228,31 @@ var App = (function(){
 	var equal = function(shell, file1, file2){
 		return shell.Run('fc '+file1+' '+file2, 7, WaitOnReturn) == 0;
 	};
+	var executeFeature = function(feature, config, Syntax, failedMatches){
+		alert('\n'+feature.name);
+		loadDefinitions(feature);
+		FileUtils.setIO(
+			feature.path,                               //input path
+			appendToPath(feature.path, config.report), //output path
+			// called after files opened and before closed
+			function(stream, outStream){
+				output = outStream;
+				Syntax.start();
+				while(!stream.AtEndOfLine){
+					Syntax.parse(stream.ReadLine());
+				}
+				Syntax.finish();
+			}
+		);
+		output = WScript.StdOut;
+		if(checkBaselines){
+			var report   = FileUtils.getFile(appendToPath(feature.path, config.report));
+			var baseline = FileUtils.getFile(appendToPath(feature.path, config.baseline));
+			if(baseline && !FileUtils.compare(report, baseline)){
+				failedMatches.push(report.name);
+			}
+		}
+	}
 	var getInjections = function(){
 		var injections = [];
 		for (var i = 0; i < importedModules.length; i++) {
@@ -367,49 +391,33 @@ var App = (function(){
 			eval(FileUtils.getContent(scriptFiles[i]));
 		};
 	});
+	
 	return{
 		alert: alert,
 		debug: debug,
 		console: function(msg){
 			WScript.Echo(msg);
 		},
+		getConfigValue: function(key){
+			return Namespace['_config'][key];
+		},
 		run: function(){
 			var failedMatches = [];
-			require(['_config','_Syntax'], function(_config, _Syntax){
+			require(['_config','_Syntax'], function(config, Syntax){
 				var featureFiles;
 				if( !selectedFeature){
-					featureFiles = _config.features.map(function(featurePath){
+					//select all feature files by specified paths
+					featureFiles = config.features.map(function(featurePath){
 						return FileUtils.select(root, featurePath);
 					}).flatten_one();
 					if( !featureFiles.length) alert('Warning: no feature files found.');
 				}else{
 					featureFiles = [selectedFeature];
 				}
-				featureFiles.foreach(function(feature){
-					alert('\n'+feature.name);
-					loadDefinitions(feature);
-					FileUtils.setIO(
-						feature.path,                               //input path
-						appendToPath(feature.path, _config.report), //output path
-						// called after files opened and before closed
-						function(stream, outStream){
-							output = outStream;
-							_Syntax.start();
-							while(!stream.AtEndOfLine){
-								_Syntax.parse(stream.ReadLine());
-							}
-							_Syntax.finish();
-						}
-					);
-					output = WScript.StdOut;
-					if(checkBaselines){
-						var report   = FileUtils.getFile(appendToPath(feature.path, _config.report));
-						var baseline = FileUtils.getFile(appendToPath(feature.path, _config.baseline));
-						if(baseline && !FileUtils.compare(report, baseline)){
-							failedMatches.push(report.name);
-						}
-					}
-				});
+				for (var i = 0; i < featureFiles.length; i++) {
+					executeFeature(featureFiles[i], config, Syntax, failedMatches);
+				};
+				// baseline matching report
 				if(checkBaselines && failedMatches.length){
 					alert("These reports don't match baselines:");
 					failedMatches.foreach(alert);

@@ -275,9 +275,14 @@ var App = (function(){
 
 			var file = FileUtils.getFile(root.path+'\\'+relativePath);
 			if(file){
-				eval(FileUtils.getContent(file));
-				Namespace[name] = Image;
-				importedModules.push(name);
+				var content = FileUtils.getContent(file);
+				content = content.concat('\nNamespace[',quote(name),'] = ',name);
+				alert(content);
+				eval(content);
+				if(Namespace[name] !== undefined){
+					importedModules.push(name);
+				}
+				else alert("Variable "+quote(name)+" not specified in file "+file.path);
 			}else{
 				alert("Script "+quote(root.path+'\\'+relativePath)+" not found.");
 			}
@@ -391,7 +396,7 @@ var App = (function(){
 			eval(FileUtils.getContent(scriptFiles[i]));
 		};
 	});
-	
+
 	return{
 		alert: alert,
 		debug: debug,

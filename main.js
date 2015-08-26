@@ -90,6 +90,31 @@ Array.prototype.some = function(func){
 	while(i < this.length && !func(this[i]))	i++;
 	return i != this.length;
 };
+// Polyfill, taken from https://developer.mozilla.org/en/docs/Web/JavaScript/Reference/Global_objects/Function/bind
+// Part about prototypes is removed
+Function.prototype.bind = function(oThis) {
+	if (typeof this !== 'function') {
+		// closest thing possible to the ECMAScript 5
+		// internal IsCallable function
+		throw new TypeError('Function.prototype.bind - what is trying to be bound is not callable');
+	}
+	var aArgs   = Array.prototype.slice.call(arguments, 1),
+		fToBind = this,
+		fNOP    = function() {},
+		fBound  = function() {
+			return fToBind.apply(this instanceof fNOP
+				? this
+				: oThis,
+				aArgs.concat(Array.prototype.slice.call(arguments))
+			);
+		};
+	// if (this.prototype) {
+	//   // native functions don't have a prototype
+	//   fNOP.prototype = this.prototype; 
+	// }
+	// fBound.prototype = new fNOP();
+	return fBound;
+};
 // Poor substitution for JSON.stringify
 Object.prototype.content = function(preq){
 	var str = '';
@@ -148,6 +173,7 @@ var FileUtils = (function(){
 	};
 
 	return{
+		// are files identical
 		compare: function(file1, file2){
 			return SHELL.run('fc '+file1.path+' '+file2.path, 7, WaitOnReturn) == 0;
 		},
@@ -158,16 +184,27 @@ var FileUtils = (function(){
 		getFile: function(path){
 			return (FSO.FileExists(path)) ? FSO.GetFile(path) : undefined;
 		},
-		select : function(root, path){
-			list = [];
-			pathExps = path.split('\\').map(function(part){
-				part = part.replace(/\*/, '.*');
-				part = part.replace(/\?/, '.?');
-				return new RegExp(part);
-			});
-			search(root, 0);
-			return list;
+		getOutputStream: function(path){
+			return FSO.OpenTextFile(path, ForWriting, true);
 		},
+		// Select from folder 'root' files, specified by 'path',
+		// which can contain wildcard characters
+		select : function(root, pathData){
+			var getFiles = function(root, path){
+				list = [];
+				pathExps = path.split('\\').map(function(part){
+					part = part.replace(/\*/, '.*');
+					part = part.replace(/\?/, '.?');
+					return new RegExp(part);
+				});
+				search(root, 0);
+				return list;
+			}
+			return isArray(pathData) 
+				? pathData.map(getFiles.bind(undefined, root)).flatten_one() 
+				: getFiles(root, pathData);
+		},
+		// create input and output streams for specified files and send them to callback
 		setIO: function(inputPath, outputPath, callback){
 			var inputStream = FSO.OpenTextFile(inputPath, ForReading);
 			var outputStream = FSO.OpenTextFile(outputPath,ForWriting, true);
@@ -187,21 +224,25 @@ var App = (function(){
 	var importedModules = ['World','Given','When','Then']; 
 	
 	var checkBaselines = false;
+	var configPath = CONFIG_PATH;
 	var debug = false;           // boolean flag for printing debug information
 	var dumb  = true;            // boolean flag for not printing reports into console
-	var output = WScript.StdOut; // points report file testStream for currently executed feature 
+	var output = WScript.StdOut; // points report file textStream for currently executed feature 
+	var reportStream = output;   // points to StdOut or file, specified to redirect program output
 	var root;                    // project root folder
 	var selectedFeature;         // feature, selected for standalone execution by -f key(if any)
+	var selectedName;            // name of selected feature
 	
 	var alert = function(msg){
+		// WScript.Echo('alert'+msg);
 		output.WriteLine(msg);
-		if( !dumb && output != WScript.StdOut) WScript.Echo(msg);
+		if( !dumb && output != reportStream) reportStream.WriteLine(msg);
 	};
 	var appendToPath = function(path, annex){
 		return path.split('.')[0].concat(annex);
 	};
 	var log = function(msg){
-		if(debug) WScript.Echo(msg);
+		if(debug) reportStream.WriteLine(msg);
 	};
 	//poor substitution of dependency injection
 	var define = function(declaration, arg2, arg3){
@@ -225,9 +266,6 @@ var App = (function(){
 			Namespace[declaration] = result;
 		}
 	};
-	var equal = function(shell, file1, file2){
-		return shell.Run('fc '+file1+' '+file2, 7, WaitOnReturn) == 0;
-	};
 	var executeFeature = function(feature, config, Syntax, failedMatches){
 		alert('\n'+feature.name);
 		loadDefinitions(feature);
@@ -242,9 +280,9 @@ var App = (function(){
 					Syntax.parse(stream.ReadLine());
 				}
 				Syntax.finish();
+				output = reportStream;
 			}
 		);
-		output = WScript.StdOut;
 		if(checkBaselines){
 			var report   = FileUtils.getFile(appendToPath(feature.path, config.report));
 			var baseline = FileUtils.getFile(appendToPath(feature.path, config.baseline));
@@ -260,6 +298,22 @@ var App = (function(){
 			log(injections[i]);
 		};
 		return injections.join('\n');
+	}
+	// loads specific step definitions for feature file, if there are any
+	var loadDefinitions = function(feature){
+		var config  = Namespace['_config'];
+		var stepFile = undefined;
+		// config.definitions contains endings, appended to the name of feature file
+		if(config.definitions.some(function(appendix){
+			var defsPath = appendToPath(feature.path, appendix);
+			// return undefined, if file doesn't exist
+			stepFile = FileUtils.getFile(defsPath);
+			return stepFile;
+		}))	require(importedModules, function(/*module links*/){
+			log(stepFile);
+			eval(getInjections());
+			eval(FileUtils.getContent(stepFile));
+		});
 	}
 	var require = function(dependencies, func){
 		func.apply(VOID_OBJECT, dependencies.map(function(name){
@@ -288,29 +342,6 @@ var App = (function(){
 			}
 		}
 	});
-	// loads specific step definitions for feature file, if there are any
-	var loadDefinitions = function(feature){
-		var config  = Namespace['_config'];
-		var stepFile = undefined;
-		// config.definitions contains endings, appended to the name of feature file
-		if(config.definitions.some(function(appendix){
-			var defsPath = appendToPath(feature.path, appendix);
-			// return undefined, if file doesn't exist
-			stepFile = FileUtils.getFile(defsPath);
-			return stepFile;
-		}))	require(importedModules, function(/*module links*/){
-			log(stepFile);
-			eval(getInjections());
-			eval(FileUtils.getContent(stepFile));
-		});
-	}
-	// reading configuration file
-	define('_config', function(){
-		var configFile = FileUtils.getFile(CONFIG_PATH);
-		assert(configFile, "Configuration file not found. Please, check CONFIG_PATH.");
-		eval('var config = '.concat(FileUtils.getContent(configFile),';'));
-		return config;
-	});
 	// Reading arguments
 	! function(){
 		var unnamed = WScript.Arguments.Unnamed;
@@ -326,10 +357,18 @@ var App = (function(){
 		for(var i = 1; i < unnamed.length; i++){
 			arg = unnamed.Item(i);
 			log(arg);
-			if(arg == '-d'){
+			if(arg == '-c'){
+				configPath = unwrap(unnamed.Item(i+1));
+				i++;
+			}if(arg == '-d'){
 				debug = true;
 			}else if(arg == '-r'){
 				dumb = false;
+			}else if(arg == '-o'){
+				var relativePath = unwrap(unnamed.Item(i+1));
+				i++;
+				reportStream = FileUtils.getOutputStream(relativePath, root);
+				output = reportStream;
 			}else if(arg == '-b'){
 				checkBaselines = true;
 			}else if(arg == '-f' && i < unnamed.length-1){
@@ -338,20 +377,31 @@ var App = (function(){
 				assert(selectedFeature, "Specified feature file doesn't exist");
 				i++;
 			}else if(arg == '-F' && i < unnamed.length-1){
-				var featureName = unwrap(unnamed.Item(i+1));
-				var suitableFiles = Namespace['_config'].features.map(function(featurePath){
-					return FileUtils.select(root, featurePath);
-				}).flatten_one().filter(function(file){
-					return file.name.split('.')[0] == featureName;
-				});
-				assert(suitableFiles.length, "Specified feature file doesn't exist");
-				if(suitableFiles.length == 1){
-					selectedFeature = suitableFiles[0];
-					alert(selectedFeature.name);
-				}else{
-					alert("Too much files with same name "+quote(featureName));
-				}
+				selectedName = unwrap(unnamed.Item(i+1));
 				i++;
+			}
+		}
+	}();
+	// reading configuration file
+	define('_config', function(){
+		var configFile = FileUtils.getFile(configPath);
+		assert(configFile, "Configuration file not found. If arguments '-c' not passed, check CONFIG_PATH.");
+		eval('var config = '.concat(FileUtils.getContent(configFile),';'));
+		return config;
+	});
+	// TODO split class
+	! function(){
+		if(selectedName){
+			var suitableFiles = FileUtils.select(root, Namespace['_config'].features)
+			.filter(function(file){
+				return file.name.split('.')[0] == selectedName;
+			});
+			assert(suitableFiles.length, "Specified feature file doesn't exist");
+			if(suitableFiles.length == 1){
+				selectedFeature = suitableFiles[0];
+				alert('Selected: '+selectedFeature.name);
+			}else{
+				alert("Too much files with same name "+quote(featureName));
 			}
 		}
 	}();
@@ -382,10 +432,7 @@ var App = (function(){
 	// loading user-specified modules(can include step definitions)
 	require(importedModules, function(/*module links*/){
 		var config = Namespace['_config'];
-		// searching scripts
-		var scriptFiles = config.scripts.map(function(scriptPath){
-			return FileUtils.select(root, scriptPath);
-		}).flatten_one();
+		var scriptFiles = FileUtils.select(root, config.scripts);
 		//including dependencies
 		log('Injections');
 		eval(getInjections());
@@ -401,7 +448,10 @@ var App = (function(){
 		alert: alert,
 		debug: debug,
 		console: function(msg){
-			WScript.Echo(msg);
+			reportStream.WriteLine(msg);
+		},
+		exit: function(){
+			reportStream.close();
 		},
 		getConfigValue: function(key){
 			return Namespace['_config'][key];
@@ -409,15 +459,11 @@ var App = (function(){
 		run: function(){
 			var failedMatches = [];
 			require(['_config','_Syntax'], function(config, Syntax){
-				var featureFiles;
-				if( !selectedFeature){
-					//select all feature files by specified paths
-					featureFiles = config.features.map(function(featurePath){
-						return FileUtils.select(root, featurePath);
-					}).flatten_one();
-					if( !featureFiles.length) alert('Warning: no feature files found.');
-				}else{
-					featureFiles = [selectedFeature];
+				var featureFiles = ( !selectedFeature)
+					? FileUtils.select(root, config.features)
+					: [selectedFeature];
+				if( !featureFiles.length){
+					alert('Warning: no feature files found.');
 				}
 				for (var i = 0; i < featureFiles.length; i++) {
 					executeFeature(featureFiles[i], config, Syntax, failedMatches);
@@ -428,9 +474,9 @@ var App = (function(){
 					failedMatches.foreach(alert);
 				}else if(checkBaselines) alert('All baselines match reports');
 			});
-		},
-		StdOut: output
+		}
 	}
 })();
 var alert = App.alert;
 App.run();
+App.exit();

@@ -1,2 +1,2 @@
 //import function num();
-World('num','lib\\num.js');
+World('lib\\num.js', 'num');
